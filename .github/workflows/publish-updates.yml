@@ -41,7 +41,13 @@ jobs:
           "version=$auto" >> $env:GITHUB_OUTPUT
           "tag=v$auto" >> $env:GITHUB_OUTPUT
 
+      - name: Apply CI version to package metadata
+        shell: pwsh
+        run: |
+          npm version ${{ steps.auto_version.outputs.version }} --no-git-tag-version
+          node -p "require('./package.json').version"
+
       - name: Build + Publish update artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win nsis -p always --config.extraMetadata.version=${{ steps.auto_version.outputs.version }}
+        run: npx electron-builder --win nsis -p always
