@@ -281,6 +281,11 @@
                   <input id="saleQuantity" type="number" min="1" step="1" class="form-control" required />
                 </div>
 
+                <div class="col-12">
+                  <label class="form-label" for="saleAmountPaid">Price Paid</label>
+                  <input id="saleAmountPaid" type="number" min="0" step="0.01" class="form-control" placeholder="Leave empty for full payment" />
+                </div>
+
                 <div class="col-12 mt-2">
                   <button type="submit" class="btn btn-success w-100">Record Sale</button>
                 </div>
@@ -455,6 +460,8 @@
                       <th>Name</th>
                       <th>Phone</th>
                       <th>Email</th>
+                      <th>Outstanding</th>
+                      <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>

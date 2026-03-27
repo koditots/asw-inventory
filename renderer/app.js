@@ -191,6 +191,7 @@ const saleForm = $('saleForm');
 const saleProductIdInput = $('saleProductId');
 const saleCustomerIdInput = $('saleCustomerId');
 const saleQuantityInput = $('saleQuantity');
+const saleAmountPaidInput = $('saleAmountPaid');
 
 const categoryForm = $('categoryForm');
 const categoryIdField = $('categoryIdField');
@@ -710,8 +711,14 @@ function renderSuppliers() {
   for (const s of state.suppliers) suppliersTableBody.insertAdjacentHTML('beforeend', `<tr><td>${s.id}</td><td>${s.name}</td><td>${s.contactInfo || 'N/A'}</td><td>${can('suppliers', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-supplier" data-id="${s.id}">Edit</button>` : ''} ${can('suppliers', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-supplier" data-id="${s.id}">Delete</button>` : ''}</td></tr>`);
 }
 function renderCustomers() {
-  renderBasicTable(customersTableBody, state.customers, 5, 'No customers available.');
-  for (const c of state.customers) customersTableBody.insertAdjacentHTML('beforeend', `<tr><td>${c.id}</td><td>${c.name}</td><td>${c.phone || 'N/A'}</td><td>${c.email || 'N/A'}</td><td>${can('customers', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-customer" data-id="${c.id}">Edit</button>` : ''} ${can('customers', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-customer" data-id="${c.id}">Delete</button>` : ''}</td></tr>`);
+  renderBasicTable(customersTableBody, state.customers, 7, 'No customers available.');
+  for (const c of state.customers) {
+    const outstanding = Number(c.outstandingBalance || 0);
+    const isDebtor = outstanding > 0;
+    const statusClass = isDebtor ? 'stock-pill low' : 'stock-pill';
+    const statusText = isDebtor ? 'Debtor' : 'Cleared';
+    customersTableBody.insertAdjacentHTML('beforeend', `<tr><td>${c.id}</td><td>${c.name}</td><td>${c.phone || 'N/A'}</td><td>${c.email || 'N/A'}</td><td>${currency(outstanding)}</td><td><span class="${statusClass}">${statusText}</span></td><td>${can('customers', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-customer" data-id="${c.id}">Edit</button>` : ''} ${can('customers', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-customer" data-id="${c.id}">Delete</button>` : ''}</td></tr>`);
+  }
 }
 
 const invoiceTypeLabel = (type) => (type === 'performa' || type === 'proforma' ? 'Performa Invoice' : type === 'quote' ? 'Quote' : 'Invoice');
@@ -1309,7 +1316,13 @@ productsTableBody.addEventListener('click', async (e) => {
 saleForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await api.recordSale({ productId: Number(saleProductIdInput.value), customerId: saleCustomerIdInput.value ? Number(saleCustomerIdInput.value) : null, quantity: Number(saleQuantityInput.value) });
+    const amountPaidRaw = String(saleAmountPaidInput?.value || '').trim();
+    await api.recordSale({
+      productId: Number(saleProductIdInput.value),
+      customerId: saleCustomerIdInput.value ? Number(saleCustomerIdInput.value) : null,
+      quantity: Number(saleQuantityInput.value),
+      amountPaid: amountPaidRaw ? Number(amountPaidRaw) : undefined
+    });
     saleForm.reset(); await refreshData(); showStatus('Sale recorded.');
   } catch (err) { showStatus(err.message || 'Sale failed.', 'error'); }
 });
