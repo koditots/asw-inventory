@@ -130,6 +130,10 @@ const statusMessageEl = $('statusMessage');
 const aboutModal = $('aboutModal');
 const aboutMetaText = $('aboutMetaText');
 const aboutModalCloseBtn = $('aboutModalCloseBtn');
+const formPopupOverlay = $('formPopupOverlay');
+const formPopupTitle = $('formPopupTitle');
+const formPopupBody = $('formPopupBody');
+const formPopupCloseBtn = $('formPopupCloseBtn');
 const updateBanner = $('updateBanner');
 const updateMessage = $('updateMessage');
 const updateProgress = $('updateProgress');
@@ -236,6 +240,7 @@ const clearInvoiceDraftBtn = $('clearInvoiceDraftBtn');
 const invoicePreview = $('invoicePreview');
 const downloadPreviewPdfBtn = $('downloadPreviewPdfBtn');
 const invoicesTableBody = $('invoicesTableBody');
+const invoicePaymentHistoryBody = $('invoicePaymentHistoryBody');
 
 const reportPeriod = $('reportPeriod');
 const reportPaymentStatus = $('reportPaymentStatus');
@@ -397,6 +402,66 @@ function showStatus(message, tone = 'success') {
   statusMessageEl.classList.remove('error', 'warning');
   if (tone === 'error') statusMessageEl.classList.add('error');
   if (tone === 'warning') statusMessageEl.classList.add('warning');
+}
+
+const formPopupState = {
+  active: false,
+  card: null,
+  placeholder: null
+};
+
+function openFormPopup(card, title = 'Form') {
+  if (!formPopupOverlay || !formPopupBody || !card) return;
+  if (formPopupState.active) closeFormPopup();
+  const ph = document.createComment('form-popup-placeholder');
+  card.parentNode?.insertBefore(ph, card);
+  formPopupBody.appendChild(card);
+  formPopupTitle.textContent = title;
+  formPopupOverlay.classList.add('active');
+  formPopupState.active = true;
+  formPopupState.card = card;
+  formPopupState.placeholder = ph;
+}
+
+function closeFormPopup() {
+  if (!formPopupState.active) return;
+  const { card, placeholder } = formPopupState;
+  if (card && placeholder?.parentNode) {
+    placeholder.parentNode.insertBefore(card, placeholder);
+    placeholder.remove();
+  }
+  formPopupOverlay?.classList.remove('active');
+  formPopupState.active = false;
+  formPopupState.card = null;
+  formPopupState.placeholder = null;
+}
+
+function formCardOf(formEl) {
+  return formEl?.closest('.panel-card') || null;
+}
+
+function attachFormPopupLauncher(formEl, label) {
+  const card = formCardOf(formEl);
+  if (!card) return;
+  const titleEl = card.querySelector('.panel-title');
+  if (!titleEl || titleEl.querySelector('[data-popup-launcher]')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-sm btn-outline-secondary ms-2';
+  btn.textContent = `Add (${label})`;
+  btn.setAttribute('data-popup-launcher', '1');
+  btn.addEventListener('click', () => openFormPopup(card, label));
+  titleEl.appendChild(btn);
+}
+
+function initPopupFormLaunchers() {
+  attachFormPopupLauncher(productForm, 'Product Form');
+  attachFormPopupLauncher(categoryForm, 'Category Form');
+  attachFormPopupLauncher(supplierForm, 'Supplier Form');
+  attachFormPopupLauncher(customerForm, 'Customer Form');
+  attachFormPopupLauncher(invoiceForm, 'Invoice Form');
+  attachFormPopupLauncher(userForm, 'User Form');
+  attachFormPopupLauncher(roleForm, 'Role Form');
 }
 
 function renderUpdateState(payload = {}) {
@@ -942,6 +1007,29 @@ function loadInvoiceIntoDraft(inv) {
   renderInvoicePreview();
 }
 
+function renderInvoicePaymentHistory(payments = [], totalAmount = 0) {
+  if (!invoicePaymentHistoryBody) return;
+  const rows = Array.isArray(payments) ? [...payments].sort((a, b) => new Date(a.createdAt || a.paymentDate).getTime() - new Date(b.createdAt || b.paymentDate).getTime()) : [];
+  if (!rows.length) {
+    invoicePaymentHistoryBody.innerHTML = '<tr><td colspan="6">No payment history for selected invoice.</td></tr>';
+    return;
+  }
+  let runningPaid = 0;
+  invoicePaymentHistoryBody.innerHTML = '';
+  rows.forEach((p) => {
+    runningPaid += Number(p.amount || 0);
+    const remaining = Math.max(0, Number(totalAmount || 0) - runningPaid);
+    invoicePaymentHistoryBody.insertAdjacentHTML('beforeend', `<tr>
+      <td>${new Date(p.createdAt || p.paymentDate || '').toLocaleString()}</td>
+      <td>${currency(p.amount || 0)}</td>
+      <td>${currency(totalAmount || 0)}</td>
+      <td>${currency(remaining)}</td>
+      <td>${p.recordedByName || p.recordedBy || 'N/A'}</td>
+      <td>${p.note || '-'}</td>
+    </tr>`);
+  });
+}
+
 async function addInvoicePaymentFlow(invoiceId) {
   const id = Number(invoiceId || 0);
   if (!id) return;
@@ -952,7 +1040,9 @@ async function addInvoicePaymentFlow(invoiceId) {
   const note = String(window.prompt('Payment note (optional):') || '').trim();
   await api.addInvoicePayment({ invoiceId: id, amount, note });
   const updated = await api.getInvoiceById(id);
+  const history = await api.getInvoicePayments(id);
   loadInvoiceIntoDraft(updated);
+  renderInvoicePaymentHistory(history, Number(updated.totalAmount || 0));
   await refreshData();
   showStatus(`Payment added to ${updated.invoiceNumber}.`);
 }
@@ -1223,7 +1313,7 @@ async function refreshData() {
   state.users = can('users', 'view') ? await api.getUsers() : [];
   if (!state.invoiceDraft.invoiceNumber) await refreshInvoiceNumber();
   if (state.invoiceDraft.useDefaultTax) invoiceTaxPercent.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
-  renderLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); renderClockInGallery(state.clockIns); renderCompany(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); applyFormAccess();
+  renderLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); renderClockInGallery(state.clockIns); renderCompany(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); applyFormAccess();
 }
 
 async function safeRefresh() {
@@ -1304,6 +1394,7 @@ async function resetInvoiceDraft() {
   await refreshInvoiceNumber();
   renderInvoiceItems();
   renderInvoicePreview();
+  renderInvoicePaymentHistory([], 0);
 }
 sectionButtons.forEach((b) => b.addEventListener('click', () => setActiveSection(b.dataset.section)));
 proMenu?.addEventListener('click', async (e) => {
@@ -1329,6 +1420,13 @@ document.addEventListener('click', (e) => {
 aboutModalCloseBtn?.addEventListener('click', () => aboutModal.classList.remove('active'));
 aboutModal?.addEventListener('click', (e) => {
   if (e.target === aboutModal) aboutModal.classList.remove('active');
+});
+formPopupCloseBtn?.addEventListener('click', () => closeFormPopup());
+formPopupOverlay?.addEventListener('click', (e) => {
+  if (e.target === formPopupOverlay) closeFormPopup();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && formPopupState.active) closeFormPopup();
 });
 
 loginForm.addEventListener('submit', async (e) => {
@@ -1374,7 +1472,7 @@ productForm.addEventListener('submit', async (e) => {
   try {
     const payload = { id: productIdInput.value ? Number(productIdInput.value) : undefined, name: nameInput.value.trim(), categoryId: categoryIdInput.value ? Number(categoryIdInput.value) : null, supplierId: supplierIdInput.value ? Number(supplierIdInput.value) : null, minStock: Number(minStockInput.value), price: Number(priceInput.value), quantity: Number(quantityInput.value) };
     if (payload.id) await api.updateProduct(payload); else await api.createProduct(payload);
-    resetSimpleForms(); await refreshData(); showStatus('Product saved.');
+    closeFormPopup(); resetSimpleForms(); await refreshData(); showStatus('Product saved.');
   } catch (err) { showStatus(err.message || 'Product save failed.', 'error'); }
 });
 
@@ -1384,6 +1482,7 @@ productsTableBody.addEventListener('click', async (e) => {
   try {
     if (t.dataset.action === 'edit-product') {
       productIdInput.value = String(row.id); nameInput.value = row.name; categoryIdInput.value = row.categoryId ? String(row.categoryId) : ''; supplierIdInput.value = row.supplierId ? String(row.supplierId) : ''; minStockInput.value = String(row.minStock); priceInput.value = String(row.price); quantityInput.value = String(row.quantity); productFormTitle.textContent = `Edit Product #${row.id}`; cancelEditBtn.hidden = false; setActiveSection('products');
+      openFormPopup(formCardOf(productForm), 'Product Form');
     } else if (t.dataset.action === 'delete-product') {
       if (!window.confirm(`Delete "${row.name}"?`)) return;
       await api.deleteProduct(row.id); await refreshData(); showStatus('Product deleted.');
@@ -1409,29 +1508,29 @@ saleForm.addEventListener('submit', async (e) => {
 
 categoryForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  try { if (categoryIdField.value) await api.updateCategory({ id: Number(categoryIdField.value), name: categoryName.value.trim() }); else await api.createCategory({ name: categoryName.value.trim() }); resetSimpleForms(); await refreshData(); showStatus('Category saved.'); } catch (err) { showStatus(err.message || 'Category failed.', 'error'); }
+  try { if (categoryIdField.value) await api.updateCategory({ id: Number(categoryIdField.value), name: categoryName.value.trim() }); else await api.createCategory({ name: categoryName.value.trim() }); closeFormPopup(); resetSimpleForms(); await refreshData(); showStatus('Category saved.'); } catch (err) { showStatus(err.message || 'Category failed.', 'error'); }
 });
 categoriesTableBody.addEventListener('click', async (e) => {
   const t = e.target; if (!(t instanceof HTMLButtonElement)) return; const row = state.categories.find((c) => c.id === Number(t.dataset.id)); if (!row) return;
-  try { if (t.dataset.action === 'edit-category') { categoryIdField.value = String(row.id); categoryName.value = row.name; } else if (t.dataset.action === 'delete-category') { if (!window.confirm(`Delete category "${row.name}"?`)) return; await api.deleteCategory(row.id); await refreshData(); showStatus('Category deleted.'); } } catch (err) { showStatus(err.message || 'Category action failed.', 'error'); }
+  try { if (t.dataset.action === 'edit-category') { categoryIdField.value = String(row.id); categoryName.value = row.name; openFormPopup(formCardOf(categoryForm), 'Category Form'); } else if (t.dataset.action === 'delete-category') { if (!window.confirm(`Delete category "${row.name}"?`)) return; await api.deleteCategory(row.id); await refreshData(); showStatus('Category deleted.'); } } catch (err) { showStatus(err.message || 'Category action failed.', 'error'); }
 });
 
 supplierForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  try { const p = { id: supplierIdField.value ? Number(supplierIdField.value) : undefined, name: supplierName.value.trim(), contactInfo: supplierContact.value.trim() }; if (p.id) await api.updateSupplier(p); else await api.createSupplier(p); resetSimpleForms(); await refreshData(); showStatus('Supplier saved.'); } catch (err) { showStatus(err.message || 'Supplier failed.', 'error'); }
+  try { const p = { id: supplierIdField.value ? Number(supplierIdField.value) : undefined, name: supplierName.value.trim(), contactInfo: supplierContact.value.trim() }; if (p.id) await api.updateSupplier(p); else await api.createSupplier(p); closeFormPopup(); resetSimpleForms(); await refreshData(); showStatus('Supplier saved.'); } catch (err) { showStatus(err.message || 'Supplier failed.', 'error'); }
 });
 suppliersTableBody.addEventListener('click', async (e) => {
   const t = e.target; if (!(t instanceof HTMLButtonElement)) return; const row = state.suppliers.find((s) => s.id === Number(t.dataset.id)); if (!row) return;
-  try { if (t.dataset.action === 'edit-supplier') { supplierIdField.value = String(row.id); supplierName.value = row.name; supplierContact.value = row.contactInfo || ''; } else if (t.dataset.action === 'delete-supplier') { if (!window.confirm(`Delete supplier "${row.name}"?`)) return; await api.deleteSupplier(row.id); await refreshData(); showStatus('Supplier deleted.'); } } catch (err) { showStatus(err.message || 'Supplier action failed.', 'error'); }
+  try { if (t.dataset.action === 'edit-supplier') { supplierIdField.value = String(row.id); supplierName.value = row.name; supplierContact.value = row.contactInfo || ''; openFormPopup(formCardOf(supplierForm), 'Supplier Form'); } else if (t.dataset.action === 'delete-supplier') { if (!window.confirm(`Delete supplier "${row.name}"?`)) return; await api.deleteSupplier(row.id); await refreshData(); showStatus('Supplier deleted.'); } } catch (err) { showStatus(err.message || 'Supplier action failed.', 'error'); }
 });
 
 customerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  try { const p = { id: customerIdField.value ? Number(customerIdField.value) : undefined, name: customerName.value.trim(), phone: customerPhone.value.trim(), email: customerEmail.value.trim() }; if (p.id) await api.updateCustomer(p); else await api.createCustomer(p); resetSimpleForms(); await refreshData(); showStatus('Customer saved.'); } catch (err) { showStatus(err.message || 'Customer failed.', 'error'); }
+  try { const p = { id: customerIdField.value ? Number(customerIdField.value) : undefined, name: customerName.value.trim(), phone: customerPhone.value.trim(), email: customerEmail.value.trim() }; if (p.id) await api.updateCustomer(p); else await api.createCustomer(p); closeFormPopup(); resetSimpleForms(); await refreshData(); showStatus('Customer saved.'); } catch (err) { showStatus(err.message || 'Customer failed.', 'error'); }
 });
 customersTableBody.addEventListener('click', async (e) => {
   const t = e.target; if (!(t instanceof HTMLButtonElement)) return; const row = state.customers.find((c) => c.id === Number(t.dataset.id)); if (!row) return;
-  try { if (t.dataset.action === 'edit-customer') { customerIdField.value = String(row.id); customerName.value = row.name; customerPhone.value = row.phone || ''; customerEmail.value = row.email || ''; } else if (t.dataset.action === 'delete-customer') { if (!window.confirm(`Delete customer "${row.name}"?`)) return; await api.deleteCustomer(row.id); await refreshData(); showStatus('Customer deleted.'); } } catch (err) { showStatus(err.message || 'Customer action failed.', 'error'); }
+  try { if (t.dataset.action === 'edit-customer') { customerIdField.value = String(row.id); customerName.value = row.name; customerPhone.value = row.phone || ''; customerEmail.value = row.email || ''; openFormPopup(formCardOf(customerForm), 'Customer Form'); } else if (t.dataset.action === 'delete-customer') { if (!window.confirm(`Delete customer "${row.name}"?`)) return; await api.deleteCustomer(row.id); await refreshData(); showStatus('Customer deleted.'); } } catch (err) { showStatus(err.message || 'Customer action failed.', 'error'); }
 });
 
 invoiceType.addEventListener('change', async () => {
@@ -1604,7 +1703,9 @@ invoicesTableBody.addEventListener('click', async (e) => {
   try {
     if (btn.dataset.action === 'view-invoice') {
       const inv = await api.getInvoiceById(Number(btn.dataset.id));
+      const history = await api.getInvoicePayments(Number(btn.dataset.id));
       loadInvoiceIntoDraft(inv);
+      renderInvoicePaymentHistory(history, Number(inv.totalAmount || 0));
       showStatus(`${invoiceTypeLabel(inv.type)} loaded into preview.`);
       return;
     }
@@ -1626,7 +1727,9 @@ dashboardDebtorsBody?.addEventListener('click', async (e) => {
   try {
     if (btn.dataset.action === 'view-invoice') {
       const inv = await api.getInvoiceById(Number(btn.dataset.id));
+      const history = await api.getInvoicePayments(Number(btn.dataset.id));
       loadInvoiceIntoDraft(inv);
+      renderInvoicePaymentHistory(history, Number(inv.totalAmount || 0));
       setActiveSection('invoices');
       showStatus(`${invoiceTypeLabel(inv.type)} loaded into preview.`);
       return;
@@ -1650,6 +1753,7 @@ roleForm.addEventListener('submit', async (e) => {
     };
     if (!payload.roleName) throw new Error('Role name is required.');
     if (payload.id) await api.updateRole(payload); else await api.createRole(payload);
+    closeFormPopup();
     roleForm.reset(); roleIdField.value = ''; roleCancelBtn.hidden = true; renderRolePermissionGrid();
     await safeRefresh();
     showStatus('Role saved.');
@@ -1672,6 +1776,7 @@ rolesTableBody.addEventListener('click', async (e) => {
       renderRolePermissionGrid(role.permissions || {});
       roleCancelBtn.hidden = false;
       setActiveSection('roles');
+      openFormPopup(formCardOf(roleForm), 'Role Form');
     } else if (t.dataset.action === 'delete-role') {
       if (!window.confirm(`Delete role "${role.roleName}"?`)) return;
       await api.deleteRole(role.id);
@@ -1817,7 +1922,7 @@ userForm.addEventListener('submit', async (e) => {
     if (!payload.username) throw new Error('Username is required.');
     if (!payload.id && !payload.password) throw new Error('Password is required for new users.');
     if (payload.id) await api.updateUser(payload); else await api.createUser(payload);
-    resetSimpleForms(); await safeRefresh(); showStatus('User saved.');
+    closeFormPopup(); resetSimpleForms(); await safeRefresh(); showStatus('User saved.');
   } catch (err) { showStatus(err.message || 'User save failed.', 'error'); }
 });
 usersTableBody.addEventListener('click', async (e) => {
@@ -1826,6 +1931,7 @@ usersTableBody.addEventListener('click', async (e) => {
     if (t.dataset.action === 'edit-user') {
       userIdField.value = String(row.id); userUsername.value = row.username; userPassword.value = ''; userIsAdmin.value = row.isAdmin ? '1' : '0'; userRoleId.value = row.roleId ? String(row.roleId) : ''; userIsActive.value = row.isActive ? '1' : '0'; setImgOrPlaceholder(userProfilePreview, row.profileImagePath, row.username);
       Array.from(userAssignedCompanies.options).forEach((o) => (o.selected = row.assignedCompanies.includes(Number(o.value))));
+      openFormPopup(formCardOf(userForm), 'User Form');
     } else if (t.dataset.action === 'reset-password') {
       const newPassword = window.prompt(`Enter a new password for "${row.username}"`);
       if (!newPassword) return;

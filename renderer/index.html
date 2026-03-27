@@ -635,6 +635,15 @@
             </table>
           </div>
         </article>
+        <article class="panel-card mt-3">
+          <div class="panel-title">Invoice Payment History</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead><tr><th>Date</th><th>Amount Paid</th><th>Total Invoice</th><th>Balance After</th><th>Added By</th><th>Note</th></tr></thead>
+              <tbody id="invoicePaymentHistoryBody"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
 
       <section id="section-reports" class="app-section">
@@ -1035,6 +1044,16 @@
       <h3>About ASW Inventory</h3>
       <p id="aboutMetaText">Loading...</p>
       <button id="aboutModalCloseBtn" class="btn btn-dark w-100 mt-2">Close</button>
+    </div>
+  </div>
+
+  <div id="formPopupOverlay" class="login-overlay">
+    <div class="login-card form-popup-card">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h3 id="formPopupTitle">Form</h3>
+        <button id="formPopupCloseBtn" class="btn btn-outline-secondary btn-sm" type="button">Close</button>
+      </div>
+      <div id="formPopupBody"></div>
     </div>
   </div>
 
