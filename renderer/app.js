@@ -403,6 +403,39 @@ function renderUpdateState(payload = {}) {
   updateMessage.textContent = message || 'Updater idle.';
   updateProgress.textContent = hasProgress ? `${progressValue.toFixed(1)}%` : '';
   restartInstallBtn.hidden = !Boolean(payload.updateReady);
+
+  if (stateValue === 'checking') {
+    showStatus('Checking for updates...', 'warning');
+  } else if (stateValue === 'available') {
+    showStatus('Update available. Downloading in background...', 'warning');
+  } else if (stateValue === 'downloading') {
+    const pctLabel = hasProgress ? `${progressValue.toFixed(1)}%` : '';
+    showStatus(`Downloading update... ${pctLabel}`.trim(), 'warning');
+  } else if (stateValue === 'not-available' && manualUpdateCheckRequested) {
+    showStatus('No update available right now.', 'warning');
+    window.alert('No update found. You are on the latest version.');
+    manualUpdateCheckRequested = false;
+  } else if (stateValue === 'downloaded') {
+    showStatus('Update downloaded. Restart to install.');
+    const noticeKey = `${message}|${payload.progress}|${payload.updateReady}`;
+    if (lastDownloadedNoticeKey !== noticeKey) {
+      lastDownloadedNoticeKey = noticeKey;
+      const shouldRestart = window.confirm('Update downloaded successfully. Restart now to install it?');
+      if (shouldRestart) {
+        restartInstallBtn?.click();
+      } else {
+        window.alert('You can install later using "Restart & Install Update".');
+      }
+    }
+    manualUpdateCheckRequested = false;
+  } else if (stateValue === 'error') {
+    showStatus(message || 'Update check failed.', 'error');
+    if (manualUpdateCheckRequested) {
+      window.alert(message || 'Update check failed. Please try again when online.');
+    }
+    manualUpdateCheckRequested = false;
+  }
+  lastUpdateState = stateValue;
 }
 
 function getAvatarPath(pathValue) {
@@ -516,9 +549,16 @@ async function handleMenuAction(action) {
   if (action === 'window-maximize') { await api.windowAction?.('maximize'); return; }
   if (action === 'window-fullscreen') { await api.windowAction?.('fullscreen'); return; }
   if (action === 'window-check-updates') {
+    manualUpdateCheckRequested = true;
     const result = await api.checkForUpdates?.();
-    if (result?.reason === 'offline') showStatus('Offline: update check skipped.', 'warning');
-    else if (result?.reason === 'dev') showStatus('Auto-update is disabled in development mode.', 'warning');
+    if (result?.reason === 'offline') {
+      showStatus('Offline: update check skipped.', 'warning');
+      window.alert('You are offline. Connect to the internet and try again.');
+      manualUpdateCheckRequested = false;
+    } else if (result?.reason === 'dev') {
+      showStatus('Auto-update is disabled in development mode.', 'warning');
+      manualUpdateCheckRequested = false;
+    }
     else showStatus('Manual update check started.');
     return;
   }
@@ -1108,6 +1148,9 @@ async function safeRefresh() {
 
 let dashboardLiveTimer = null;
 let detachUpdateStatusListener = null;
+let manualUpdateCheckRequested = false;
+let lastUpdateState = 'idle';
+let lastDownloadedNoticeKey = '';
 
 function stopDashboardLiveUpdates() {
   if (dashboardLiveTimer) {
