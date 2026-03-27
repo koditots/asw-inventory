@@ -289,6 +289,7 @@ const emailSmtpUser = $('emailSmtpUser');
 const emailSmtpPass = $('emailSmtpPass');
 const emailSmtpSecure = $('emailSmtpSecure');
 const testEmailConnectionBtn = $('testEmailConnectionBtn');
+const sendTestEmailBtn = $('sendTestEmailBtn');
 const createUserForm = $('createUserForm');
 const newUsername = $('newUsername');
 const newPassword = $('newPassword');
@@ -1601,6 +1602,25 @@ testEmailConnectionBtn?.addEventListener('click', async () => {
     showStatus('SMTP connection test succeeded.');
   } catch (err) {
     showStatus(err.message || 'SMTP connection test failed.', 'error');
+  }
+});
+
+sendTestEmailBtn?.addEventListener('click', async () => {
+  try {
+    const to = String(emailSmtpUser?.value || '').trim();
+    if (!isEmail(to)) throw new Error('Set a valid SMTP email address first.');
+    const res = await api.sendEmail({
+      purpose: 'system',
+      to,
+      subject: 'ASW Inventory SMTP Test Email',
+      text: 'SMTP setup is working correctly.',
+      html: '<p><strong>ASW Inventory</strong>: SMTP setup is working correctly.</p>',
+      queueIfOffline: true
+    });
+    if (res?.queued) showStatus('Test email queued (will send when online).', 'warning');
+    else showStatus('Test email sent successfully.');
+  } catch (err) {
+    showStatus(err.message || 'Failed to send test email.', 'error');
   }
 });
 

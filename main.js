@@ -617,7 +617,8 @@ function registerIpcHandlers() {
   ipcMain.handle('email:send', async (_event, payload) => {
     requireClockIn();
     const purpose = String(payload?.purpose || 'invoice').toLowerCase();
-    if (purpose === 'reminder') requirePermission('customers', 'view');
+    if (purpose === 'system') requirePermission('settings', 'edit');
+    else if (purpose === 'reminder') requirePermission('customers', 'view');
     else requirePermission('invoices', 'print');
     const companyId = getActiveCompanyId();
     const company = await db.getCompanyEmailConfigRaw(companyId);
