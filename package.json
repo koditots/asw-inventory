@@ -56,10 +56,6 @@
         "nsis"
       ]
     },
-    "nsis": {
-      "installerIcon": "icon.png",
-      "uninstallerIcon": "icon.png"
-    },
     "publish": {
       "provider": "github",
       "owner": "koditots",
