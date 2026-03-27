@@ -1,0 +1,894 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASW Inventory</title>
+  <link rel="stylesheet" href="../node_modules/bootstrap/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-box">
+        <div class="brand-logo">ASW</div>
+        <div>
+          <h1>ASW Inventory</h1>
+          <p>Desktop Inventory Suite</p>
+        </div>
+      </div>
+
+      <nav class="nav flex-column section-nav">
+        <button class="nav-link active" data-section="dashboard"><span class="nav-icon" data-icon="dashboard"></span><span>Dashboard</span></button>
+        <button class="nav-link" data-section="products"><span class="nav-icon" data-icon="products"></span><span>Products</span></button>
+        <button class="nav-link" data-section="categories"><span class="nav-icon" data-icon="categories"></span><span>Categories</span></button>
+        <button class="nav-link" data-section="suppliers"><span class="nav-icon" data-icon="suppliers"></span><span>Suppliers</span></button>
+        <button class="nav-link" data-section="customers"><span class="nav-icon" data-icon="customers"></span><span>Customers</span></button>
+        <button class="nav-link" data-section="invoices"><span class="nav-icon" data-icon="invoices"></span><span>Invoices</span></button>
+        <button class="nav-link" data-section="clockin"><span class="nav-icon" data-icon="clockin"></span><span>Clock-In</span></button>
+        <button class="nav-link" data-section="reports"><span class="nav-icon" data-icon="reports"></span><span>Sales Reports</span></button>
+        <button class="nav-link" data-section="company"><span class="nav-icon" data-icon="company"></span><span>Company Setup</span></button>
+        <button class="nav-link" data-section="users"><span class="nav-icon" data-icon="users"></span><span>User Management</span></button>
+        <button class="nav-link" data-section="roles"><span class="nav-icon" data-icon="roles"></span><span>Role Management</span></button>
+        <button class="nav-link" data-section="settings"><span class="nav-icon" data-icon="settings"></span><span>Settings</span></button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-mini mb-2">
+          <img id="currentUserAvatar" class="user-mini-avatar" alt="User" />
+          <div>
+            <div id="currentUser">Not signed in</div>
+            <button id="myProfileImageBtn" class="btn btn-sm btn-outline-secondary mt-1">My Profile Image</button>
+          </div>
+        </div>
+        <label class="form-label mb-1" for="companySwitcher">Active Company</label>
+        <select id="companySwitcher" class="form-select form-select-sm mb-2"></select>
+        <button id="logoutBtn" class="btn btn-sm btn-outline-secondary">Logout</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="main-header">
+        <h2 id="sectionTitle">Dashboard</h2>
+        <p class="header-subtitle">Fully offline inventory management with local SQLite storage.</p>
+      </header>
+
+      <section id="section-dashboard" class="app-section active">
+        <div class="row g-3 mb-3">
+          <div class="col-lg-4">
+            <article class="metric-card">
+              <p>Total Products</p>
+              <h3 id="totalProducts">0</h3>
+            </article>
+          </div>
+          <div class="col-lg-4">
+            <article class="metric-card">
+              <p>Total Sales</p>
+              <h3 id="totalSales">$0.00</h3>
+            </article>
+          </div>
+          <div class="col-lg-4">
+            <article class="metric-card">
+              <p>Total Transactions</p>
+              <h3 id="totalTransactions">0</h3>
+            </article>
+          </div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-lg-4"><article class="metric-card"><p>Daily Revenue</p><h3 id="dailyRevenue">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Weekly Revenue</p><h3 id="weeklyRevenue">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Monthly Revenue</p><h3 id="monthlyRevenue">$0.00</h3></article></div>
+        </div>
+
+        <article class="panel-card">
+          <div class="panel-title">Stock Alerts (Below Minimum)</div>
+          <ul id="lowStockList" class="low-stock-list"></ul>
+        </article>
+        <div class="row g-3 mt-1">
+          <div class="col-12">
+            <article class="panel-card">
+              <div class="panel-title">Sales Trend</div>
+              <canvas id="dashboardSalesChart" class="dashboard-sales-chart" width="860" height="220"></canvas>
+              <div id="dashboardChartEmpty" class="text-muted mt-2"></div>
+            </article>
+          </div>
+        </div>
+        <div id="dashboardAdminSection" class="row g-3 mt-1">
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Top-Selling Products (Admin)</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Product</th><th>Units</th><th>Revenue</th></tr></thead>
+                  <tbody id="dashboardTopProductsBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Sales by Customer (Admin)</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Customer</th><th>Transactions</th><th>Revenue</th></tr></thead>
+                  <tbody id="dashboardCustomerSalesBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <div class="col-12">
+            <article class="panel-card">
+              <div class="panel-title">Staff Clock-In Summary (Admin)</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>User</th><th>Clock-Ins</th></tr></thead>
+                  <tbody id="dashboardStaffClockInBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+        <article class="panel-card mt-3">
+          <div class="panel-title">Recent Activities</div>
+          <div id="recentActivitiesList" class="text-muted"></div>
+        </article>
+      </section>
+
+      <section id="section-clockin" class="app-section">
+        <article class="panel-card">
+          <div class="row g-2 align-items-end mb-2">
+            <div class="col-md-4">
+              <label class="form-label" for="clockInDateFilter">View By Date</label>
+              <input id="clockInDateFilter" type="date" class="form-control" />
+            </div>
+          </div>
+          <div class="panel-title">Clock-In Images</div>
+          <div id="clockInGallery" class="clockin-grid"></div>
+        </article>
+      </section>
+
+      <section id="section-products" class="app-section">
+        <article class="panel-card mb-3">
+          <div class="row g-3">
+            <div class="col-lg-4">
+              <label class="form-label" for="searchInput">Search</label>
+              <input id="searchInput" class="form-control" type="search" placeholder="Search by name, category, or supplier" />
+            </div>
+            <div class="col-lg-4">
+              <label class="form-label" for="filterCategory">Filter by Category</label>
+              <select id="filterCategory" class="form-select"></select>
+            </div>
+            <div class="col-lg-4">
+              <label class="form-label" for="filterSupplier">Filter by Supplier</label>
+              <select id="filterSupplier" class="form-select"></select>
+            </div>
+          </div>
+        </article>
+
+        <div class="row g-3 mb-3">
+          <div class="col-xl-7">
+            <article class="panel-card">
+              <div class="panel-title" id="productFormTitle">Add Product</div>
+              <form id="productForm" class="row g-2" novalidate>
+                <input type="hidden" id="productId" />
+
+                <div class="col-md-6">
+                  <label class="form-label" for="name">Product Name</label>
+                  <input id="name" name="name" type="text" class="form-control" required maxlength="120" />
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label" for="categoryId">Category</label>
+                  <select id="categoryId" class="form-select"></select>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label" for="supplierId">Supplier</label>
+                  <select id="supplierId" class="form-select"></select>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label" for="minStock">Minimum Stock</label>
+                  <input id="minStock" type="number" min="0" step="1" class="form-control" required />
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label" for="price">Unit Price</label>
+                  <input id="price" name="price" type="number" min="0" step="0.01" class="form-control" required />
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label" for="quantity">Quantity</label>
+                  <input id="quantity" name="quantity" type="number" min="0" step="1" class="form-control" required />
+                </div>
+
+                <div class="col-12 d-flex gap-2 mt-2">
+                  <button type="submit" class="btn btn-dark" id="saveProductBtn">Save Product</button>
+                  <button type="button" class="btn btn-outline-secondary" id="cancelEditBtn" hidden>Cancel Edit</button>
+                </div>
+              </form>
+            </article>
+          </div>
+
+          <div class="col-xl-5">
+            <article class="panel-card">
+              <div class="panel-title">Record Sale</div>
+              <form id="saleForm" class="row g-2" novalidate>
+                <div class="col-12">
+                  <label class="form-label" for="saleProductId">Product</label>
+                  <select id="saleProductId" class="form-select" required></select>
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label" for="saleCustomerId">Customer</label>
+                  <select id="saleCustomerId" class="form-select"></select>
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label" for="saleQuantity">Quantity Sold</label>
+                  <input id="saleQuantity" type="number" min="1" step="1" class="form-control" required />
+                </div>
+
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-success w-100">Record Sale</button>
+                </div>
+              </form>
+            </article>
+          </div>
+        </div>
+
+        <article class="panel-card">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Category</th>
+                  <th>Supplier</th>
+                  <th>Price</th>
+                  <th>Stock</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="productsTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="section-categories" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <article class="panel-card">
+              <div class="panel-title">Category Form</div>
+              <form id="categoryForm" class="row g-2" novalidate>
+                <input type="hidden" id="categoryIdField" />
+                <div class="col-12">
+                  <label class="form-label" for="categoryName">Category Name</label>
+                  <input id="categoryName" class="form-control" type="text" required maxlength="80" />
+                </div>
+                <div class="col-12 d-flex gap-2 mt-2">
+                  <button type="submit" class="btn btn-dark">Save</button>
+                  <button type="button" id="categoryCancelBtn" class="btn btn-outline-secondary" hidden>Cancel</button>
+                </div>
+              </form>
+            </article>
+          </div>
+
+          <div class="col-lg-8">
+            <article class="panel-card">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Name</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="categoriesTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+        <div class="row g-3 mt-1">
+          <div class="col-lg-4"><article class="metric-card"><p>Inventory Value</p><h3 id="inventoryValue">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>COGS</p><h3 id="reportCogs">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Gross Profit</p><h3 id="reportGrossProfit">$0.00</h3></article></div>
+        </div>
+        <div class="row g-3 mt-1">
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Inventory Snapshot</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Product</th><th>Qty</th><th>Unit Profit</th></tr></thead>
+                  <tbody id="reportInventoryBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Staff Performance</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>User</th><th>Sales</th><th>Revenue</th></tr></thead>
+                  <tbody id="reportStaffBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-suppliers" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <article class="panel-card">
+              <div class="panel-title">Supplier Form</div>
+              <form id="supplierForm" class="row g-2" novalidate>
+                <input type="hidden" id="supplierIdField" />
+                <div class="col-12">
+                  <label class="form-label" for="supplierName">Supplier Name</label>
+                  <input id="supplierName" class="form-control" type="text" required maxlength="120" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="supplierContact">Contact Info</label>
+                  <textarea id="supplierContact" class="form-control" rows="3"></textarea>
+                </div>
+                <div class="col-12 d-flex gap-2 mt-2">
+                  <button type="submit" class="btn btn-dark">Save</button>
+                  <button type="button" id="supplierCancelBtn" class="btn btn-outline-secondary" hidden>Cancel</button>
+                </div>
+              </form>
+            </article>
+          </div>
+
+          <div class="col-lg-8">
+            <article class="panel-card">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Name</th>
+                      <th>Contact</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="suppliersTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-customers" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <article class="panel-card">
+              <div class="panel-title">Customer Form</div>
+              <form id="customerForm" class="row g-2" novalidate>
+                <input type="hidden" id="customerIdField" />
+                <div class="col-12">
+                  <label class="form-label" for="customerName">Customer Name</label>
+                  <input id="customerName" class="form-control" type="text" required maxlength="120" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="customerPhone">Phone</label>
+                  <input id="customerPhone" class="form-control" type="text" maxlength="40" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="customerEmail">Email</label>
+                  <input id="customerEmail" class="form-control" type="email" maxlength="120" />
+                </div>
+                <div class="col-12 d-flex gap-2 mt-2">
+                  <button type="submit" class="btn btn-dark">Save</button>
+                  <button type="button" id="customerCancelBtn" class="btn btn-outline-secondary" hidden>Cancel</button>
+                </div>
+              </form>
+            </article>
+          </div>
+
+          <div class="col-lg-8">
+            <article class="panel-card">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Name</th>
+                      <th>Phone</th>
+                      <th>Email</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="customersTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-invoices" class="app-section">
+        <div class="row g-3 mb-3">
+          <div class="col-xl-6">
+            <article class="panel-card">
+              <div class="panel-title">Create Document</div>
+              <form id="invoiceForm" class="row g-2" novalidate>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceType">Document Type</label>
+                  <select id="invoiceType" class="form-select">
+                    <option value="invoice">Invoice</option>
+                    <option value="performa">Performa Invoice</option>
+                    <option value="quote">Quote</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceStatus">Status</label>
+                  <select id="invoiceStatus" class="form-select">
+                    <option value="draft">Draft</option>
+                    <option value="sent">Sent</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="paid">Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceDate">Date</label>
+                  <input id="invoiceDate" type="date" class="form-control" required />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceNumber">Document Number</label>
+                  <div class="input-group">
+                    <input id="invoiceNumber" type="text" class="form-control" required />
+                    <button id="invoiceRegenerateBtn" type="button" class="btn btn-outline-secondary">Auto</button>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="invoiceCustomerId">Customer</label>
+                  <select id="invoiceCustomerId" class="form-select" required></select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceProductId">Add Product</label>
+                  <select id="invoiceProductId" class="form-select"></select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label" for="invoiceItemQty">Qty</label>
+                  <input id="invoiceItemQty" type="number" min="1" step="1" class="form-control" value="1" />
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                  <button id="addInvoiceItemBtn" type="button" class="btn btn-outline-dark w-100">Add Item</button>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceTaxPercent">Tax %</label>
+                  <input id="invoiceTaxPercent" type="number" min="0" step="0.01" class="form-control" value="0" />
+                  <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="invoiceUseDefaultTax" checked />
+                    <label class="form-check-label" for="invoiceUseDefaultTax">Use default tax from settings</label>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceDiscountAmount">Discount Amount</label>
+                  <input id="invoiceDiscountAmount" type="number" min="0" step="0.01" class="form-control" value="0" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceValidityPeriod">Validity Period (Quote/Performa)</label>
+                  <input id="invoiceValidityPeriod" type="text" class="form-control" placeholder="e.g., 30 days" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="invoiceNotes">Notes (Quote specific)</label>
+                  <input id="invoiceNotes" type="text" class="form-control" placeholder="Optional note" />
+                </div>
+              </form>
+
+              <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th width="90">Qty</th>
+                      <th width="120">Price</th>
+                      <th width="120">Total</th>
+                      <th width="90"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="invoiceItemsBody"></tbody>
+                </table>
+              </div>
+
+              <div class="invoice-totals mt-2">
+                <span>Total:</span>
+                <strong id="invoiceGrandTotal">$0.00</strong>
+              </div>
+
+              <div class="d-flex gap-2 mt-3">
+                <button id="saveInvoiceBtn" type="button" class="btn btn-dark">Save Document</button>
+                <button id="saveAndPrintInvoiceBtn" type="button" class="btn btn-warning">Save + Export PDF</button>
+                <button id="clearInvoiceDraftBtn" type="button" class="btn btn-outline-secondary">Clear</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="col-xl-6">
+            <article class="panel-card">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="panel-title mb-0">Preview</div>
+                <button id="downloadPreviewPdfBtn" class="btn btn-outline-primary btn-sm">Download Preview PDF</button>
+              </div>
+              <div id="invoicePreview" class="invoice-preview"></div>
+            </article>
+          </div>
+        </div>
+
+        <article class="panel-card">
+          <div class="panel-title">Saved Documents</div>
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Type</th>
+                  <th>Customer</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Total</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="invoicesTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="section-reports" class="app-section">
+        <article class="panel-card mb-3">
+          <div class="row g-3 align-items-end">
+            <div class="col-lg-4">
+              <label class="form-label" for="reportPeriod">Report Period</label>
+              <select id="reportPeriod" class="form-select">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div class="col-lg-8 d-flex gap-2">
+              <button id="generateReportBtn" class="btn btn-dark">Generate Report</button>
+              <button id="exportReportBtn" class="btn btn-outline-success" disabled>Export CSV</button>
+              <span id="reportRangeLabel" class="report-range"></span>
+            </div>
+          </div>
+        </article>
+
+        <div class="row g-3 mb-3">
+          <div class="col-lg-4"><article class="metric-card"><p>Total Revenue</p><h3 id="reportTotalRevenue">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Total Transactions</p><h3 id="reportTotalTransactions">0</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Total Items Sold</p><h3 id="reportTotalItems">0</h3></article></div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Top Selling Products</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Product</th><th>Units</th><th>Revenue</th></tr></thead>
+                  <tbody id="reportTopProductsBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Sales by Customer</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Customer</th><th>Transactions</th><th>Revenue</th></tr></thead>
+                  <tbody id="reportCustomerSalesBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-company" class="app-section">
+        <div class="row g-3">
+          <div class="col-12">
+            <article class="panel-card">
+              <div class="panel-title">Companies (Admin)</div>
+              <form id="companyCreateForm" class="row g-2" novalidate>
+                <div class="col-md-8">
+                  <label class="form-label" for="newCompanyName">New Company Name</label>
+                  <input id="newCompanyName" class="form-control" type="text" maxlength="140" />
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                  <button type="submit" class="btn btn-outline-dark w-100">Create Company</button>
+                </div>
+              </form>
+            </article>
+          </div>
+          <div class="col-xl-8">
+            <article class="panel-card">
+              <div class="panel-title">Company Information</div>
+              <form id="companyForm" class="row g-2" novalidate>
+                <div class="col-md-6">
+                  <label class="form-label" for="companyName">Company Name</label>
+                  <input id="companyName" class="form-control" type="text" required maxlength="140" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="companyPhone">Phone</label>
+                  <input id="companyPhone" class="form-control" type="text" maxlength="60" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="companyAddress">Address</label>
+                  <textarea id="companyAddress" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="companyEmail">Email</label>
+                  <input id="companyEmail" class="form-control" type="email" maxlength="120" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="companyPaymentMethods">Payment Methods</label>
+                  <input id="companyPaymentMethods" class="form-control" type="text" placeholder="Cash, Transfer, Card" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="companyPrimaryColor">Primary Color</label>
+                  <input id="companyPrimaryColor" class="form-control form-control-color w-100" type="color" value="#f4c214" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="companyBankName">Bank Name</label>
+                  <input id="companyBankName" class="form-control" type="text" maxlength="120" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="companyAccountNumber">Account Number</label>
+                  <input id="companyAccountNumber" class="form-control" type="text" maxlength="40" />
+                </div>
+                <input id="companyLogoPath" type="hidden" />
+                <input id="companySignaturePath" type="hidden" />
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-dark">Save Company Setup</button>
+                </div>
+              </form>
+            </article>
+          </div>
+
+          <div class="col-xl-4">
+            <article class="panel-card mb-3">
+              <div class="panel-title">Company Logo</div>
+              <img id="companyLogoPreview" class="company-preview" alt="Company Logo" />
+              <button id="uploadLogoBtn" class="btn btn-outline-secondary mt-2">Upload Logo</button>
+            </article>
+            <article class="panel-card">
+              <div class="panel-title">Company Signature</div>
+              <img id="companySignaturePreview" class="company-preview" alt="Company Signature" />
+              <button id="uploadSignatureBtn" class="btn btn-outline-secondary mt-2">Upload Signature</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-users" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <article class="panel-card">
+              <div class="panel-title">User Form (Admin)</div>
+              <form id="userForm" class="row g-2" novalidate>
+                <input type="hidden" id="userIdField" />
+                <div class="col-12">
+                  <label class="form-label" for="userUsername">Username</label>
+                  <input id="userUsername" class="form-control" type="text" required />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="userPassword">Password</label>
+                  <input id="userPassword" class="form-control" type="password" placeholder="Leave blank to keep current password while editing" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="userIsAdmin">Role</label>
+                  <select id="userIsAdmin" class="form-select">
+                    <option value="0">Standard User</option>
+                    <option value="1">Admin</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="userRoleId">Assigned Role</label>
+                  <select id="userRoleId" class="form-select">
+                    <option value="">No specific role (full default)</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="userIsActive">Account Status</label>
+                  <select id="userIsActive" class="form-select">
+                    <option value="1">Enabled</option>
+                    <option value="0">Disabled</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="userAssignedCompanies">Assigned Companies (Ctrl/Cmd + Click)</label>
+                  <select id="userAssignedCompanies" class="form-select" multiple size="6"></select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Profile Image</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <img id="userProfilePreview" class="user-profile-preview" alt="User profile preview" />
+                    <button type="button" id="userUploadProfileBtn" class="btn btn-outline-secondary btn-sm">Upload Profile</button>
+                  </div>
+                </div>
+                <div class="col-12 d-flex gap-2 mt-2">
+                  <button type="submit" class="btn btn-dark">Save User</button>
+                  <button type="button" id="userCancelBtn" class="btn btn-outline-secondary" hidden>Cancel</button>
+                </div>
+              </form>
+            </article>
+          </div>
+          <div class="col-lg-8">
+            <article class="panel-card">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Companies</th><th>Actions</th></tr></thead>
+                  <tbody id="usersTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-roles" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-5">
+            <article class="panel-card">
+              <div class="panel-title">Role Form (Admin)</div>
+              <form id="roleForm" class="row g-2" novalidate>
+                <input type="hidden" id="roleIdField" />
+                <div class="col-12">
+                  <label class="form-label" for="roleName">Role Name</label>
+                  <input id="roleName" class="form-control" type="text" required maxlength="80" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label mb-1">Permissions</label>
+                  <div id="rolePermissionsGrid" class="role-permissions-grid"></div>
+                </div>
+                <div class="col-12 d-flex gap-2 mt-2">
+                  <button type="submit" class="btn btn-dark">Save Role</button>
+                  <button type="button" id="roleCancelBtn" class="btn btn-outline-secondary" hidden>Cancel</button>
+                </div>
+              </form>
+            </article>
+          </div>
+          <div class="col-lg-7">
+            <article class="panel-card">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>ID</th><th>Role Name</th><th>Permissions</th><th>Actions</th></tr></thead>
+                  <tbody id="rolesTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-settings" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-6">
+            <article class="panel-card mb-3">
+              <div class="panel-title">Invoice Settings (Admin)</div>
+              <form id="invoiceSettingsForm" class="row g-2" novalidate>
+                <div class="col-md-4">
+                  <label class="form-label" for="settingsDefaultTaxRate">Default Tax %</label>
+                  <input id="settingsDefaultTaxRate" type="number" min="0" max="100" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="settingsTermsConditions">Terms & Conditions</label>
+                  <textarea id="settingsTermsConditions" class="form-control" rows="6" placeholder="Enter terms & conditions applied to invoices, performa invoices, and quotes."></textarea>
+                </div>
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-dark">Save Invoice Settings</button>
+                </div>
+              </form>
+            </article>
+            <article class="panel-card">
+              <div class="panel-title">Database Maintenance</div>
+              <p class="text-muted mb-3">Backup and restore your local SQLite database.</p>
+              <div class="d-flex gap-2">
+                <button id="backupBtn" class="btn btn-outline-primary">Backup Database</button>
+                <button id="restoreBtn" class="btn btn-outline-warning">Restore Database</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Create User</div>
+              <form id="createUserForm" class="row g-2" novalidate>
+                <div class="col-md-6">
+                  <label class="form-label" for="newUsername">Username</label>
+                  <input id="newUsername" class="form-control" type="text" required maxlength="60" />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="newPassword">Password</label>
+                  <input id="newPassword" class="form-control" type="password" required minlength="6" />
+                </div>
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-dark">Create User</button>
+                </div>
+              </form>
+            </article>
+            <article class="panel-card mt-3">
+              <div class="panel-title">Change Password</div>
+              <form id="changePasswordForm" class="row g-2" novalidate>
+                <div class="col-12">
+                  <label class="form-label" for="currentPassword">Current Password</label>
+                  <input id="currentPassword" class="form-control" type="password" required />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="changeNewPassword">New Password</label>
+                  <input id="changeNewPassword" class="form-control" type="password" required minlength="8" />
+                  <small id="passwordStrength" class="password-strength">Strength: enter password</small>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="confirmNewPassword">Confirm New Password</label>
+                  <input id="confirmNewPassword" class="form-control" type="password" required />
+                </div>
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-outline-dark">Update Password</button>
+                </div>
+              </form>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <div id="updateBanner" class="update-banner" hidden>
+        <div id="updateMessage" class="update-message">Checking for updates...</div>
+        <div class="update-actions">
+          <span id="updateProgress" class="update-progress"></span>
+          <button id="restartInstallBtn" class="btn btn-sm btn-dark" type="button" hidden>Restart &amp; Install Update</button>
+        </div>
+      </div>
+      <p id="statusMessage" class="status-message" aria-live="polite"></p>
+    </main>
+  </div>
+
+  <div id="loginOverlay" class="login-overlay">
+    <form id="loginForm" class="login-card" novalidate>
+      <h3>Sign In</h3>
+      <p>Default account: <strong>admin</strong> / <strong>admin123</strong></p>
+      <label for="loginUsername" class="form-label">Username</label>
+      <input id="loginUsername" class="form-control" type="text" required />
+      <label for="loginPassword" class="form-label mt-2">Password</label>
+      <input id="loginPassword" class="form-control" type="password" required />
+      <button type="submit" class="btn btn-dark w-100 mt-3">Login</button>
+      <p id="loginMessage" class="login-message"></p>
+    </form>
+  </div>
+
+  <div id="clockInOverlay" class="login-overlay">
+    <div class="login-card">
+      <h3>Clock In Required</h3>
+      <p>Capture your snapshot to start your shift for the active company.</p>
+      <video id="clockInVideo" autoplay playsinline class="clockin-video"></video>
+      <canvas id="clockInCanvas" class="d-none"></canvas>
+      <button id="clockInBtn" class="btn btn-dark w-100 mt-3">Clock In Now</button>
+      <p id="clockInMessage" class="login-message"></p>
+    </div>
+  </div>
+
+  <div id="clockInViewerModal" class="login-overlay">
+    <div class="login-card clockin-viewer-card">
+      <h3>Clock-In Image</h3>
+      <img id="clockInViewerImage" class="clockin-viewer-image" alt="Clock-In Full View" />
+      <p id="clockInViewerMeta" class="login-message" style="color:#334155;"></p>
+      <button id="clockInViewerCloseBtn" class="btn btn-dark w-100 mt-2">Close</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

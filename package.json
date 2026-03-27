@@ -1,0 +1,65 @@
+{
+  "name": "asw-inventory",
+  "version": "1.0.0",
+  "description": "ASW Inventory desktop application built with Electron and SQLite.",
+  "main": "main.js",
+  "scripts": {
+    "start": "set ELECTRON_RUN_AS_NODE=&& electron .",
+    "dev": "set ELECTRON_RUN_AS_NODE=&& electron .",
+    "build": "electron-builder --dir",
+    "dist": "electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [
+    "electron",
+    "inventory",
+    "sqlite",
+    "desktop"
+  ],
+  "author": "ASW",
+  "license": "ISC",
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/austcomswift/asw-inventory.git"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.8",
+    "electron-updater": "^6.8.3",
+    "pdfkit": "^0.18.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "electron": "^41.0.4",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.asw.inventory",
+    "productName": "ASW Inventory",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "invoice-template.js",
+      "renderer/**/*",
+      "database/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "austcomswift",
+      "repo": "asw-inventory",
+      "releaseType": "release"
+    }
+  }
+}
