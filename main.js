@@ -75,6 +75,7 @@ let activeSession = null;
 const UPDATE_STATUS_CHANNEL = 'updater:status';
 let currentUpdateState = { state: 'idle', message: 'Updater idle.', progress: null, updateReady: false };
 let emailQueueTimer = null;
+const DEV_UPDATE_CONFIG_NAME = 'dev-app-update.yml';
 
 function sendUpdateStatus(partial = {}) {
   currentUpdateState = { ...currentUpdateState, ...partial };
@@ -231,6 +232,10 @@ function startEmailQueueWorker() {
 }
 
 function configureAutoUpdater() {
+  // Allow local updater checks when running unpackaged, if dev-app-update.yml is present.
+  if (!app.isPackaged) {
+    autoUpdater.forceDevUpdateConfig = true;
+  }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('checking-for-update', () => {
@@ -272,8 +277,12 @@ function configureAutoUpdater() {
 
 async function checkForUpdatesIfOnline(source = 'startup') {
   if (!app.isPackaged) {
-    sendUpdateStatus({ state: 'disabled', message: 'Auto-update is disabled in development mode.', progress: null, updateReady: false });
-    return { checked: false, reason: 'dev' };
+    const devConfigPath = path.join(app.getAppPath(), DEV_UPDATE_CONFIG_NAME);
+    if (!fs.existsSync(devConfigPath)) {
+      const message = 'Updater requires a packaged app or dev-app-update.yml for local testing.';
+      sendUpdateStatus({ state: 'disabled', message, progress: null, updateReady: false });
+      return { checked: false, reason: 'dev', message };
+    }
   }
   const isOnline = await hasInternetConnection();
   if (!isOnline) {

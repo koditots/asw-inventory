@@ -557,7 +557,7 @@ async function handleMenuAction(action) {
       window.alert('You are offline. Connect to the internet and try again.');
       manualUpdateCheckRequested = false;
     } else if (result?.reason === 'dev') {
-      showStatus('Auto-update is disabled in development mode.', 'warning');
+      showStatus(result?.message || 'Updater is not available in this mode.', 'warning');
       manualUpdateCheckRequested = false;
     }
     else showStatus('Manual update check started.');

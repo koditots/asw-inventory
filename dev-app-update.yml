@@ -1,0 +1,4 @@
+provider: github
+owner: koditots
+repo: asw-inventory
+updaterCacheDirName: asw-inventory-updater
