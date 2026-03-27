@@ -28,40 +28,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Read app version
-        id: app_version
+      - name: Compute auto-increment release version
+        id: auto_version
         shell: pwsh
         run: |
-          $version = node -p "require('./package.json').version"
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "tag=v$version" >> $env:GITHUB_OUTPUT
-
-      - name: Check if release already exists
-        id: release_check
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const tag = '${{ steps.app_version.outputs.tag }}';
-            const { owner, repo } = context.repo;
-            try {
-              await github.rest.repos.getReleaseByTag({ owner, repo, tag });
-              core.info(`Release already exists for ${tag}.`);
-              core.setOutput('exists', 'true');
-            } catch (error) {
-              if (error.status === 404) {
-                core.info(`No release found for ${tag}; publishing update.`);
-                core.setOutput('exists', 'false');
-              } else {
-                throw error;
-              }
-            }
+          $base = node -p "require('./package.json').version"
+          $parts = $base.Split('.')
+          if ($parts.Length -lt 2) { throw "package.json version must be at least major.minor.patch" }
+          $major = [int]$parts[0]
+          $minor = [int]$parts[1]
+          $auto = "$major.$minor.${{ github.run_number }}"
+          "version=$auto" >> $env:GITHUB_OUTPUT
+          "tag=v$auto" >> $env:GITHUB_OUTPUT
 
       - name: Build + Publish update artifacts
-        if: steps.release_check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win nsis -p always
-
-      - name: Skip note
-        if: steps.release_check.outputs.exists == 'true'
-        run: echo "Release for ${{ steps.app_version.outputs.tag }} already exists. Bump package.json version to publish next update."
+        run: npx electron-builder --win nsis -p always --config.extraMetadata.version=${{ steps.auto_version.outputs.version }}

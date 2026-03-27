@@ -51,13 +51,12 @@ npm run dist
 
 - The app is configured to fetch updates from `koditots/asw-inventory` GitHub Releases.
 - CI workflow: `.github/workflows/publish-updates.yml`
-- On every push to `main`, CI checks `package.json` version:
-  - If release tag `v<version>` does not exist, it builds and publishes installer + update metadata.
-  - If it exists, it skips publish.
+- On every push to `main`, CI auto-generates an increasing app version:
+  - `major.minor.<github_run_number>` (example: `1.0.148`)
+  - builds and publishes installer + update metadata to GitHub Releases.
 
 To ship a new update to installed users:
 
-1. Bump app version in `package.json` (e.g. `1.0.1`).
-2. Commit and push to `main`.
-3. GitHub Action publishes release assets automatically.
-4. Installed apps detect and download update through `electron-updater`.
+1. Commit and push changes to `main`.
+2. GitHub Action publishes a new higher-version release automatically.
+3. Installed apps detect and download update through `electron-updater`.
