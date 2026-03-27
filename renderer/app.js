@@ -335,6 +335,7 @@ const menuItemMeta = {
   'window-minimize': { label: 'Minimize', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14"/></svg>' },
   'window-maximize': { label: 'Maximize', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16"/></svg>' },
   'window-fullscreen': { label: 'Fullscreen', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H3v5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="M16 21h5v-5"/></svg>' },
+  'window-check-updates': { label: 'Check for Updates', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>' },
   'window-devtools': { label: 'Developer Tools', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18l-6-6 6-6"/><path d="M15 6l6 6-6 6"/></svg>' },
   documentation: { label: 'Documentation', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v18H6.5A2.5 2.5 0 014 17.5V4.5A2.5 2.5 0 016.5 2z"/></svg>' },
   about: { label: 'About ASW Inventory', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>' }
@@ -513,6 +514,13 @@ async function handleMenuAction(action) {
   if (action === 'window-minimize') { await api.windowAction?.('minimize'); return; }
   if (action === 'window-maximize') { await api.windowAction?.('maximize'); return; }
   if (action === 'window-fullscreen') { await api.windowAction?.('fullscreen'); return; }
+  if (action === 'window-check-updates') {
+    const result = await api.checkForUpdates?.();
+    if (result?.reason === 'offline') showStatus('Offline: update check skipped.', 'warning');
+    else if (result?.reason === 'dev') showStatus('Auto-update is disabled in development mode.', 'warning');
+    else showStatus('Manual update check started.');
+    return;
+  }
   if (action === 'window-devtools') { await api.windowAction?.('devtools'); return; }
   if (action === 'documentation') { await api.openDocumentation?.(); return; }
   if (action === 'about') {
