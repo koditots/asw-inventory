@@ -167,6 +167,8 @@ async function migrate() {
     customer_id INTEGER,
     quantity INTEGER NOT NULL CHECK(quantity > 0),
     total_price REAL NOT NULL CHECK(total_price >= 0),
+    amount_paid REAL NOT NULL DEFAULT 0 CHECK(amount_paid >= 0),
+    balance_due REAL NOT NULL DEFAULT 0 CHECK(balance_due >= 0),
     date TEXT NOT NULL
   )`);
 
@@ -182,8 +184,13 @@ async function migrate() {
     tax_amount REAL NOT NULL DEFAULT 0,
     discount_amount REAL NOT NULL DEFAULT 0,
     total_amount REAL NOT NULL CHECK(total_amount >= 0),
+    amount_paid REAL NOT NULL DEFAULT 0 CHECK(amount_paid >= 0),
+    balance REAL NOT NULL DEFAULT 0 CHECK(balance >= 0),
+    payment_status TEXT NOT NULL DEFAULT 'unpaid',
     type TEXT NOT NULL CHECK(type IN ('invoice', 'proforma', 'quote')),
     status TEXT NOT NULL DEFAULT 'draft',
+    last_payment_by INTEGER,
+    last_payment_at TEXT,
     created_by INTEGER,
     created_at TEXT NOT NULL
   )`);
@@ -260,6 +267,16 @@ async function migrate() {
     created_at TEXT NOT NULL
   )`);
 
+  await run(`CREATE TABLE IF NOT EXISTS payment_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    invoice_id INTEGER NOT NULL,
+    amount REAL NOT NULL CHECK(amount > 0),
+    added_by INTEGER,
+    created_at TEXT NOT NULL,
+    note TEXT DEFAULT ''
+  )`);
+
   await run(`CREATE TABLE IF NOT EXISTS receipts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id INTEGER NOT NULL,
@@ -318,6 +335,8 @@ async function migrate() {
   await ensureCol('sales', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('sales', 'customer_id', 'INTEGER');
   await ensureCol('sales', 'created_by', 'INTEGER');
+  await ensureCol('sales', 'amount_paid', 'REAL NOT NULL DEFAULT 0');
+  await ensureCol('sales', 'balance_due', 'REAL NOT NULL DEFAULT 0');
   await ensureCol('invoices', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('invoices', 'customer_id', 'INTEGER');
   await ensureCol('invoices', 'invoice_number', "TEXT NOT NULL DEFAULT ''");
@@ -332,6 +351,11 @@ async function migrate() {
   await ensureCol('invoices', 'status', "TEXT NOT NULL DEFAULT 'draft'");
   await ensureCol('invoices', 'validity_period', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('invoices', 'notes', "TEXT NOT NULL DEFAULT ''");
+  await ensureCol('invoices', 'amount_paid', 'REAL NOT NULL DEFAULT 0');
+  await ensureCol('invoices', 'balance', 'REAL NOT NULL DEFAULT 0');
+  await ensureCol('invoices', 'payment_status', "TEXT NOT NULL DEFAULT 'unpaid'");
+  await ensureCol('invoices', 'last_payment_by', 'INTEGER');
+  await ensureCol('invoices', 'last_payment_at', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('invoices', 'created_by', 'INTEGER');
   await ensureCol('invoices', 'created_at', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('categories', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
@@ -387,10 +411,81 @@ async function migrate() {
   await run("UPDATE invoices SET date = COALESCE(NULLIF(TRIM(date), ''), created_at) WHERE date IS NULL OR TRIM(date) = ''");
   await run("UPDATE invoices SET items = '[]' WHERE items IS NULL OR TRIM(items) = ''");
   await run("UPDATE invoices SET validity_period = '' WHERE validity_period IS NULL");
+  await run("UPDATE invoices SET amount_paid = 0 WHERE amount_paid IS NULL OR amount_paid < 0");
+  await run("UPDATE invoices SET balance = COALESCE(total_amount, 0) WHERE balance IS NULL OR balance < 0");
+  await run("UPDATE invoices SET payment_status = 'unpaid' WHERE payment_status IS NULL OR TRIM(payment_status) = ''");
+  await run("UPDATE invoices SET last_payment_at = '' WHERE last_payment_at IS NULL");
+  await run("UPDATE sales SET amount_paid = COALESCE(amount_paid, 0)");
+  await run("UPDATE sales SET balance_due = COALESCE(balance_due, 0)");
   await run("UPDATE invoices SET notes = '' WHERE notes IS NULL");
   await run("UPDATE customers SET notes = '' WHERE notes IS NULL");
   await run("UPDATE customers SET tags = '' WHERE tags IS NULL");
   await run("UPDATE company SET industry_type = 'retail' WHERE industry_type IS NULL OR TRIM(industry_type) = ''");
+
+  // Backfill canonical payment history from legacy invoice_payments where needed.
+  await run(
+    `INSERT INTO payment_history (company_id, invoice_id, amount, added_by, created_at, note)
+     SELECT ip.company_id, ip.invoice_id, ip.amount, ip.recorded_by, COALESCE(NULLIF(ip.created_at, ''), ip.payment_date), COALESCE(ip.note, '')
+     FROM invoice_payments ip
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM payment_history ph
+       WHERE ph.company_id = ip.company_id
+         AND ph.invoice_id = ip.invoice_id
+         AND ABS(ph.amount - ip.amount) < 0.0001
+         AND COALESCE(ph.created_at, '') = COALESCE(NULLIF(ip.created_at, ''), ip.payment_date)
+     )`
+  );
+
+  // Keep invoice payment fields synced for existing records.
+  await run(
+    `UPDATE invoices
+     SET amount_paid = COALESCE((
+       SELECT ROUND(SUM(ph.amount), 2)
+       FROM payment_history ph
+       WHERE ph.company_id = invoices.company_id AND ph.invoice_id = invoices.id
+     ), 0)`
+  );
+  await run(
+    `UPDATE invoices
+     SET balance = ROUND(CASE
+       WHEN COALESCE(total_amount, 0) - COALESCE(amount_paid, 0) < 0 THEN 0
+       ELSE COALESCE(total_amount, 0) - COALESCE(amount_paid, 0)
+     END, 2)`
+  );
+  await run(
+    `UPDATE invoices
+     SET payment_status = CASE
+       WHEN COALESCE(amount_paid, 0) <= 0 THEN 'unpaid'
+       WHEN COALESCE(amount_paid, 0) + 0.0001 < COALESCE(total_amount, 0) THEN 'partial'
+       ELSE 'paid'
+     END`
+  );
+  await run(
+    `UPDATE invoices
+     SET last_payment_at = COALESCE((
+       SELECT ph.created_at
+       FROM payment_history ph
+       WHERE ph.company_id = invoices.company_id AND ph.invoice_id = invoices.id
+       ORDER BY ph.created_at DESC, ph.id DESC
+       LIMIT 1
+     ), COALESCE(last_payment_at, ''))`
+  );
+  await run(
+    `UPDATE invoices
+     SET last_payment_by = (
+       SELECT ph.added_by
+       FROM payment_history ph
+       WHERE ph.company_id = invoices.company_id AND ph.invoice_id = invoices.id
+       ORDER BY ph.created_at DESC, ph.id DESC
+       LIMIT 1
+     )
+     WHERE EXISTS (
+       SELECT 1
+       FROM payment_history ph
+       WHERE ph.company_id = invoices.company_id AND ph.invoice_id = invoices.id
+     )`
+  );
 
   const userCount = await get('SELECT COUNT(*) AS c FROM users');
   if (!userCount || userCount.c === 0) {
@@ -796,7 +891,16 @@ async function createCustomer(payload, companyId) {
 
 function getCustomers(companyId) {
   const cid = toInt(companyId, -1);
-  return all('SELECT id, name, phone, email, notes, tags FROM customers WHERE company_id = ? ORDER BY name ASC', [cid]);
+  return all(
+    `SELECT c.id, c.name, c.phone, c.email, c.notes, c.tags,
+            COALESCE(SUM(COALESCE(s.balance_due, 0)), 0) AS outstandingBalance
+     FROM customers c
+     LEFT JOIN sales s ON s.customer_id = c.id AND s.company_id = c.company_id
+     WHERE c.company_id = ?
+     GROUP BY c.id, c.name, c.phone, c.email, c.notes, c.tags
+     ORDER BY c.name ASC`,
+    [cid]
+  );
 }
 
 async function updateCustomer(payload, companyId) {
@@ -972,11 +1076,16 @@ async function recordSale(payload, companyId) {
       customerValue = customerId;
     }
     const totalPrice = Number((product.price * qty).toFixed(2));
+    const amountPaidRaw = Number(payload.amountPaid);
+    const amountPaid = Number.isFinite(amountPaidRaw) ? Number(amountPaidRaw.toFixed(2)) : totalPrice;
+    if (amountPaid < 0) throw new Error('Amount paid cannot be negative.');
+    if (amountPaid > totalPrice) throw new Error('Amount paid cannot exceed total sale amount.');
+    const balanceDue = Number((totalPrice - amountPaid).toFixed(2));
     const stamp = new Date().toISOString();
     await run('UPDATE products SET quantity = quantity - ? WHERE id = ? AND company_id = ?', [qty, productId, cid]);
     const res = await run(
-      'INSERT INTO sales (company_id, product_id, customer_id, quantity, total_price, date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [cid, productId, customerValue, qty, totalPrice, stamp, toInt(payload?.createdBy, null)]
+      'INSERT INTO sales (company_id, product_id, customer_id, quantity, total_price, amount_paid, balance_due, date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [cid, productId, customerValue, qty, totalPrice, amountPaid, balanceDue, stamp, toInt(payload?.createdBy, null)]
     );
     await addStockMovement({
       companyId: cid,
@@ -999,10 +1108,10 @@ async function recordSale(payload, companyId) {
       action: 'create',
       module: 'sales',
       entityId: res.id,
-      metadata: { productId, quantity: qty, totalPrice, paymentMethod: String(payload?.paymentMethod || 'cash') }
+      metadata: { productId, quantity: qty, totalPrice, amountPaid, balanceDue, paymentMethod: String(payload?.paymentMethod || 'cash') }
     });
     await run('COMMIT');
-    return { id: res.id, productId, customerId: customerValue, quantity: qty, totalPrice, date: stamp, receiptNumber };
+    return { id: res.id, productId, customerId: customerValue, quantity: qty, totalPrice, amountPaid, balanceDue, date: stamp, receiptNumber };
   } catch (e) {
     await run('ROLLBACK');
     throw e;
@@ -1039,6 +1148,22 @@ async function getDashboardStats(companyId, userId = null) {
      LIMIT 5`,
     [cid]
   );
+  const debtors = await all(
+    `SELECT i.id AS invoiceId,
+            i.invoice_number AS invoiceNumber,
+            c.name AS customerName,
+            i.total_amount AS totalAmount,
+            i.amount_paid AS amountPaid,
+            i.balance AS balance,
+            i.payment_status AS paymentStatus,
+            i.last_payment_at AS lastPaymentAt
+     FROM invoices i
+     INNER JOIN customers c ON c.id = i.customer_id
+     WHERE i.company_id = ? AND COALESCE(i.payment_status, 'unpaid') IN ('partial', 'unpaid')
+     ORDER BY i.balance DESC, i.date DESC
+     LIMIT 20`,
+    [cid]
+  );
   const staffClockInSummary = await all(
     `SELECT u.username, COUNT(ci.id) AS clockIns
      FROM clock_in ci
@@ -1062,6 +1187,16 @@ async function getDashboardStats(companyId, userId = null) {
       monthly: { totalSales: Number(monthly?.totalSales || 0), revenue: Number(monthly?.revenue || 0) }
     },
     topSellingProducts,
+    debtors: debtors.map((d) => ({
+      invoiceId: d.invoiceId,
+      invoiceNumber: d.invoiceNumber,
+      customerName: d.customerName || '',
+      totalAmount: Number(d.totalAmount || 0),
+      amountPaid: Number(d.amountPaid || 0),
+      balance: Number(d.balance || 0),
+      paymentStatus: normalizePaymentStatus(d.paymentStatus),
+      lastPaymentAt: d.lastPaymentAt || ''
+    })),
     staffClockInSummary,
     recentActivities
   };
@@ -1076,7 +1211,7 @@ function buildReportRange(period) {
   return { startIso: start.toISOString(), endIso: now.toISOString() };
 }
 
-async function getSalesReport(period = 'daily', companyId) {
+async function getSalesReport(period = 'daily', companyId, paymentStatus = 'all') {
   const cid = toInt(companyId, -1);
   const range = buildReportRange(period);
   const summary = await get(
@@ -1103,7 +1238,59 @@ async function getSalesReport(period = 'daily', companyId) {
      ORDER BY revenue DESC`,
     [cid, range.startIso, range.endIso]
   );
-  return { period, startDate: range.startIso, endDate: range.endIso, summary: { totalTransactions: summary?.totalTransactions || 0, totalItemsSold: summary?.totalItemsSold || 0, totalRevenue: Number(summary?.totalRevenue || 0) }, topProducts, customerSales };
+  const paymentFilter = String(paymentStatus || 'all').trim().toLowerCase();
+  const filterAllowed = new Set(['all', 'paid', 'partial', 'unpaid']);
+  const normalizedFilter = filterAllowed.has(paymentFilter) ? paymentFilter : 'all';
+  const paymentRows = await all(
+    `SELECT i.id AS invoiceId,
+            i.invoice_number AS invoiceNumber,
+            COALESCE(c.name, 'Walk-in Customer') AS customerName,
+            i.total_amount AS totalAmount,
+            i.amount_paid AS amountPaid,
+            i.balance AS balance,
+            i.payment_status AS paymentStatus,
+            i.created_by AS createdBy,
+            uc.username AS initiatedBy,
+            i.last_payment_by AS lastPaymentBy,
+            up.username AS lastPaymentByName,
+            i.last_payment_at AS lastPaymentAt
+     FROM invoices i
+     LEFT JOIN customers c ON c.id = i.customer_id
+     LEFT JOIN users uc ON uc.id = i.created_by
+     LEFT JOIN users up ON up.id = i.last_payment_by
+     WHERE i.company_id = ?
+       AND i.date BETWEEN ? AND ?
+       AND (? = 'all' OR COALESCE(i.payment_status, 'unpaid') = ?)
+     ORDER BY i.date DESC, i.id DESC`,
+    [cid, range.startIso, range.endIso, normalizedFilter, normalizedFilter]
+  );
+  return {
+    period,
+    paymentFilter: normalizedFilter,
+    startDate: range.startIso,
+    endDate: range.endIso,
+    summary: {
+      totalTransactions: summary?.totalTransactions || 0,
+      totalItemsSold: summary?.totalItemsSold || 0,
+      totalRevenue: Number(summary?.totalRevenue || 0)
+    },
+    topProducts,
+    customerSales,
+    invoicePayments: paymentRows.map((row) => ({
+      invoiceId: row.invoiceId,
+      invoiceNumber: row.invoiceNumber,
+      customerName: row.customerName || '',
+      totalAmount: Number(row.totalAmount || 0),
+      amountPaid: Number(row.amountPaid || 0),
+      balance: Number(row.balance || 0),
+      paymentStatus: normalizePaymentStatus(row.paymentStatus),
+      createdBy: toInt(row.createdBy, null),
+      initiatedBy: row.initiatedBy || '',
+      lastPaymentBy: toInt(row.lastPaymentBy, null),
+      lastPaymentByName: row.lastPaymentByName || '',
+      lastPaymentAt: row.lastPaymentAt || ''
+    }))
+  };
 }
 
 async function getInventoryReport(companyId) {
@@ -1213,10 +1400,11 @@ async function getInvoicePayments(invoiceId, companyId) {
   const cid = toInt(companyId, -1);
   if (id <= 0 || cid <= 0) throw new Error('Valid invoice/company required.');
   return all(
-    `SELECT id, amount, payment_method AS paymentMethod, payment_date AS paymentDate, recorded_by AS recordedBy, note, created_at AS createdAt
-     FROM invoice_payments
-     WHERE company_id = ? AND invoice_id = ?
-     ORDER BY payment_date DESC, id DESC`,
+    `SELECT ph.id, ph.amount, 'cash' AS paymentMethod, ph.created_at AS paymentDate, ph.added_by AS recordedBy, u.username AS recordedByName, ph.note, ph.created_at AS createdAt
+     FROM payment_history ph
+     LEFT JOIN users u ON u.id = ph.added_by
+     WHERE ph.company_id = ? AND ph.invoice_id = ?
+     ORDER BY ph.created_at DESC, ph.id DESC`,
     [cid, id]
   );
 }
@@ -1225,33 +1413,38 @@ async function recordInvoicePayment(payload, companyId, userId = null) {
   const cid = toInt(companyId, -1);
   const invoiceId = toInt(payload?.invoiceId, -1);
   const amount = Number(payload?.amount || 0);
-  const paymentMethod = String(payload?.paymentMethod || 'cash').trim().toLowerCase();
   const note = String(payload?.note || '').trim();
   const paymentDate = payload?.paymentDate ? new Date(payload.paymentDate) : new Date();
   if (cid <= 0 || invoiceId <= 0 || !Number.isFinite(amount) || amount <= 0) throw new Error('Payment data is invalid.');
   if (Number.isNaN(paymentDate.getTime())) throw new Error('Payment date is invalid.');
   const invoice = await get('SELECT id, total_amount AS totalAmount FROM invoices WHERE id = ? AND company_id = ?', [invoiceId, cid]);
   if (!invoice) throw new Error('Invoice not found.');
-  const paidRow = await get('SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE company_id = ? AND invoice_id = ?', [cid, invoiceId]);
+  const paidRow = await get('SELECT COALESCE(SUM(amount),0) AS paid FROM payment_history WHERE company_id = ? AND invoice_id = ?', [cid, invoiceId]);
   const alreadyPaid = Number(paidRow?.paid || 0);
   const nextPaid = Number((alreadyPaid + amount).toFixed(2));
   if (nextPaid - Number(invoice.totalAmount || 0) > 0.0001) throw new Error('Payment exceeds outstanding amount.');
+  const createdAt = paymentDate.toISOString();
+  const balance = Number((Number(invoice.totalAmount || 0) - nextPaid).toFixed(2));
+  const paymentStatus = derivePaymentStatus(Number(invoice.totalAmount || 0), nextPaid);
   const res = await run(
-    `INSERT INTO invoice_payments (company_id, invoice_id, amount, payment_method, payment_date, recorded_by, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [cid, invoiceId, amount, paymentMethod, paymentDate.toISOString(), toInt(userId, null), note, new Date().toISOString()]
+    `INSERT INTO payment_history (company_id, invoice_id, amount, added_by, created_at, note)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [cid, invoiceId, amount, toInt(userId, null), createdAt, note]
   );
-  const newStatus = nextPaid <= 0 ? 'pending' : (nextPaid + 0.0001 < Number(invoice.totalAmount || 0) ? 'partially_paid' : 'paid');
-  await run('UPDATE invoices SET status = ? WHERE id = ? AND company_id = ?', [newStatus, invoiceId, cid]);
-  await logAudit({ companyId: cid, userId, action: 'payment', module: 'invoices', entityId: invoiceId, metadata: { amount, paymentMethod, status: newStatus } });
-  return { id: res.id, invoiceId, amount, paymentMethod, status: newStatus };
+  const documentStatus = paymentStatus === 'paid' ? 'paid' : (paymentStatus === 'partial' ? 'partially_paid' : 'pending');
+  await run(
+    'UPDATE invoices SET amount_paid = ?, balance = ?, payment_status = ?, status = ?, last_payment_by = ?, last_payment_at = ? WHERE id = ? AND company_id = ?',
+    [nextPaid, balance, paymentStatus, documentStatus, toInt(userId, null), createdAt, invoiceId, cid]
+  );
+  await logAudit({ companyId: cid, userId, action: 'payment', module: 'invoices', entityId: invoiceId, metadata: { amount, status: paymentStatus, balance } });
+  return { id: res.id, invoiceId, amount, status: paymentStatus, amountPaid: nextPaid, balance, paymentDate: createdAt };
 }
 
 async function getFinancialSummary(companyId, period = 'daily') {
   const cid = toInt(companyId, -1);
   const range = buildReportRange(period === 'daily' ? 'daily' : period === 'weekly' ? 'weekly' : 'monthly');
   const revenue = await get('SELECT COALESCE(SUM(total_price),0) AS value FROM sales WHERE company_id = ? AND date BETWEEN ? AND ?', [cid, range.startIso, range.endIso]);
-  const paid = await get('SELECT COALESCE(SUM(amount),0) AS value FROM invoice_payments WHERE company_id = ? AND payment_date BETWEEN ? AND ?', [cid, range.startIso, range.endIso]);
+  const paid = await get('SELECT COALESCE(SUM(amount),0) AS value FROM payment_history WHERE company_id = ? AND created_at BETWEEN ? AND ?', [cid, range.startIso, range.endIso]);
   const cogs = await get(
     `SELECT COALESCE(SUM(s.quantity * p.cost_price), 0) AS value
      FROM sales s INNER JOIN products p ON p.id = s.product_id
@@ -1297,6 +1490,20 @@ function normalizeInvoiceStatus(status) {
   return allowed.has(value) ? value : 'draft';
 }
 
+function normalizePaymentStatus(status) {
+  const value = String(status || '').trim().toLowerCase();
+  if (value === 'paid' || value === 'partial' || value === 'unpaid') return value;
+  return 'unpaid';
+}
+
+function derivePaymentStatus(totalAmount, amountPaid) {
+  const total = Math.max(0, Number(totalAmount || 0));
+  const paid = Math.max(0, Number(amountPaid || 0));
+  if (paid <= 0) return 'unpaid';
+  if (paid + 0.0001 < total) return 'partial';
+  return 'paid';
+}
+
 function invoicePrefixForType(type) {
   if (type === 'proforma' || type === 'performa') return 'PFI';
   if (type === 'quote') return 'QTE';
@@ -1320,12 +1527,19 @@ function normalizeInvoiceRow(row) {
     taxAmount: Number(row.tax_amount || 0),
     discountAmount: Number(row.discount_amount || 0),
     totalAmount: Number(row.total_amount || 0),
+    amountPaid: Number(row.amount_paid || 0),
+    balance: Number(row.balance || 0),
+    paymentStatus: normalizePaymentStatus(row.payment_status),
     // Backward compatibility: legacy rows may still contain "proforma".
     type: row.type === 'proforma' ? 'performa' : row.type,
     status: row.status || 'draft',
     validityPeriod: String(row.validity_period || ''),
     notes: String(row.notes || ''),
     createdBy: toInt(row.created_by, null),
+    createdByUsername: row.created_by_username || '',
+    lastPaymentBy: toInt(row.last_payment_by, null),
+    lastPaymentByUsername: row.last_payment_by_username || '',
+    lastPaymentAt: String(row.last_payment_at || ''),
     createdAt: row.created_at
   };
 }
@@ -1582,14 +1796,20 @@ async function createInvoice(payload, companyId, createdBy = null) {
   const notes = String(payload?.notes || '').trim();
   const taxAmount = Number(((subtotalAmount * taxPercent) / 100).toFixed(2));
   const totalAmount = Number(Math.max(0, subtotalAmount + taxAmount - discountAmount).toFixed(2));
+  const amountPaidRaw = Number(payload?.amountPaid ?? 0);
+  if (!Number.isFinite(amountPaidRaw) || amountPaidRaw < 0) throw new Error('Amount paid must be a valid non-negative number.');
+  const amountPaid = Number(amountPaidRaw.toFixed(2));
+  if (amountPaid - totalAmount > 0.0001) throw new Error('Amount paid cannot exceed total invoice amount.');
+  const balance = Number((totalAmount - amountPaid).toFixed(2));
+  const paymentStatus = derivePaymentStatus(totalAmount, amountPaid);
   let invoiceNumber = String(payload?.invoiceNumber || '').trim();
   if (!invoiceNumber) invoiceNumber = await getNextInvoiceNumber(cid, type);
   const exists = await get('SELECT id FROM invoices WHERE company_id = ? AND invoice_number = ?', [cid, invoiceNumber]);
   if (exists) throw new Error('Invoice number already exists for this company.');
   const createdAt = new Date().toISOString();
   const res = await run(
-    `INSERT INTO invoices (company_id, customer_id, invoice_number, date, items, subtotal_amount, tax_percent, tax_amount, discount_amount, total_amount, type, status, validity_period, notes, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO invoices (company_id, customer_id, invoice_number, date, items, subtotal_amount, tax_percent, tax_amount, discount_amount, total_amount, amount_paid, balance, payment_status, type, status, validity_period, notes, created_by, last_payment_by, last_payment_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       cid,
       customerId,
@@ -1601,21 +1821,33 @@ async function createInvoice(payload, companyId, createdBy = null) {
       taxAmount,
       discountAmount,
       totalAmount,
+      amountPaid,
+      balance,
+      paymentStatus,
       type,
       status,
       validityPeriod,
       notes,
       toInt(createdBy, null),
+      amountPaid > 0 ? toInt(createdBy, null) : null,
+      amountPaid > 0 ? createdAt : '',
       createdAt
     ]
   );
+  if (amountPaid > 0) {
+    await run(
+      `INSERT INTO payment_history (company_id, invoice_id, amount, added_by, created_at, note)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [cid, res.id, amountPaid, toInt(createdBy, null), createdAt, 'Initial payment']
+    );
+  }
   await logAudit({
     companyId: cid,
     userId: toInt(createdBy, null),
     action: 'create',
     module: 'invoices',
     entityId: res.id,
-    metadata: { type, invoiceNumber, totalAmount }
+    metadata: { type, invoiceNumber, totalAmount, amountPaid, balance, paymentStatus }
   });
   return getInvoiceById(res.id, cid);
 }
@@ -1628,9 +1860,13 @@ async function getInvoiceById(invoiceId, companyId) {
     `SELECT i.*,
             c.name AS customer_name,
             c.phone AS customer_phone,
-            c.email AS customer_email
+            c.email AS customer_email,
+            uc.username AS created_by_username,
+            up.username AS last_payment_by_username
      FROM invoices i
      INNER JOIN customers c ON c.id = i.customer_id
+     LEFT JOIN users uc ON uc.id = i.created_by
+     LEFT JOIN users up ON up.id = i.last_payment_by
      WHERE i.id = ? AND i.company_id = ?`,
     [id, cid]
   );
@@ -1647,9 +1883,13 @@ async function getInvoices(companyId, payload = {}) {
       `SELECT i.*,
               c.name AS customer_name,
               c.phone AS customer_phone,
-              c.email AS customer_email
+              c.email AS customer_email,
+              uc.username AS created_by_username,
+              up.username AS last_payment_by_username
        FROM invoices i
        INNER JOIN customers c ON c.id = i.customer_id
+       LEFT JOIN users uc ON uc.id = i.created_by
+       LEFT JOIN users up ON up.id = i.last_payment_by
        WHERE i.company_id = ? AND i.type = ?
        ORDER BY i.date DESC, i.id DESC
        LIMIT ?`,
@@ -1659,9 +1899,13 @@ async function getInvoices(companyId, payload = {}) {
       `SELECT i.*,
               c.name AS customer_name,
               c.phone AS customer_phone,
-              c.email AS customer_email
+              c.email AS customer_email,
+              uc.username AS created_by_username,
+              up.username AS last_payment_by_username
        FROM invoices i
        INNER JOIN customers c ON c.id = i.customer_id
+       LEFT JOIN users uc ON uc.id = i.created_by
+       LEFT JOIN users up ON up.id = i.last_payment_by
        WHERE i.company_id = ?
        ORDER BY i.date DESC, i.id DESC
        LIMIT ?`,

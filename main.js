@@ -194,6 +194,121 @@ async function sendEmailWithConfig(config, payload = {}) {
   return { messageId: info?.messageId || '' };
 }
 
+function paymentStatusLabel(value) {
+  const status = String(value || '').toLowerCase();
+  if (status === 'paid') return 'Paid';
+  if (status === 'partial') return 'Partial';
+  return 'Unpaid';
+}
+
+async function queueOrSendInvoiceEmail(companyId, payload = {}) {
+  const to = String(payload?.to || '').trim();
+  if (!isEmail(to)) return { ok: false, skipped: 'invalid-recipient' };
+  let company;
+  try {
+    company = await db.getCompanyEmailConfigRaw(companyId);
+  } catch {
+    return { ok: false, skipped: 'missing-config' };
+  }
+  const config = {
+    smtpHost: company?.smtpHost,
+    smtpPort: company?.smtpPort,
+    smtpUser: company?.smtpUser,
+    smtpPass: decryptSmtpPassword(company?.smtpPass),
+    smtpSecure: company?.smtpSecure
+  };
+  try {
+    normalizeSmtpConfig(config);
+  } catch {
+    return { ok: false, skipped: 'invalid-config' };
+  }
+  const emailPayload = {
+    to,
+    subject: String(payload?.subject || '').trim(),
+    text: String(payload?.text || '').trim(),
+    html: String(payload?.html || '').trim(),
+    attachments: sanitizeAttachments(payload?.attachments)
+  };
+  const online = await hasInternetConnection();
+  if (!online) {
+    const queueId = await db.enqueueEmail({
+      companyId,
+      recipient: emailPayload.to,
+      subject: emailPayload.subject,
+      textBody: emailPayload.text,
+      htmlBody: emailPayload.html,
+      attachments: emailPayload.attachments,
+      purpose: String(payload?.purpose || 'invoice')
+    });
+    return { ok: true, queued: true, queueId };
+  }
+  try {
+    const sent = await sendEmailWithConfig(config, emailPayload);
+    return { ok: true, queued: false, messageId: sent?.messageId || '' };
+  } catch (error) {
+    const queueId = await db.enqueueEmail({
+      companyId,
+      recipient: emailPayload.to,
+      subject: emailPayload.subject,
+      textBody: emailPayload.text,
+      htmlBody: emailPayload.html,
+      attachments: emailPayload.attachments,
+      purpose: String(payload?.purpose || 'invoice')
+    });
+    return { ok: true, queued: true, queueId, warning: error?.message || 'Email queued due to send failure.' };
+  }
+}
+
+async function notifyInvoiceCreated(companyId, invoice) {
+  if (!invoice || !isEmail(invoice.customerEmail)) return { ok: false, skipped: 'no-customer-email' };
+  const summary = `${invoice.invoiceNumber} | Total: ${Number(invoice.totalAmount || 0).toFixed(2)} | Paid: ${Number(invoice.amountPaid || 0).toFixed(2)} | Balance: ${Number(invoice.balance || 0).toFixed(2)}`;
+  return queueOrSendInvoiceEmail(companyId, {
+    purpose: 'invoice',
+    to: invoice.customerEmail,
+    subject: 'New Invoice',
+    text: `A new invoice has been created.\n${summary}\nStatus: ${paymentStatusLabel(invoice.paymentStatus)}`,
+    html: `<p>A new invoice has been created for <strong>${invoice.customerName || 'Customer'}</strong>.</p>
+<p><strong>Invoice:</strong> ${invoice.invoiceNumber}<br/><strong>Total:</strong> ${Number(invoice.totalAmount || 0).toFixed(2)}<br/><strong>Amount Paid:</strong> ${Number(invoice.amountPaid || 0).toFixed(2)}<br/><strong>Balance:</strong> ${Number(invoice.balance || 0).toFixed(2)}<br/><strong>Payment Status:</strong> ${paymentStatusLabel(invoice.paymentStatus)}</p>`
+  });
+}
+
+async function notifyInvoicePayment(companyId, invoice, payment) {
+  const notifications = [];
+  if (invoice && isEmail(invoice.customerEmail)) {
+    notifications.push(queueOrSendInvoiceEmail(companyId, {
+      purpose: 'invoice',
+      to: invoice.customerEmail,
+      subject: 'Payment Received',
+      text: `Payment received for invoice ${invoice.invoiceNumber}.\nAmount: ${Number(payment?.amount || 0).toFixed(2)}\nRemaining Balance: ${Number(invoice.balance || 0).toFixed(2)}`,
+      html: `<p>We received your payment for invoice <strong>${invoice.invoiceNumber}</strong>.</p>
+<p><strong>Amount Paid:</strong> ${Number(payment?.amount || 0).toFixed(2)}<br/><strong>Remaining Balance:</strong> ${Number(invoice.balance || 0).toFixed(2)}</p>`
+    }));
+  }
+  const company = await db.getCompanyEmailConfigRaw(companyId);
+  const adminRecipient = String(company?.smtpUser || '').trim();
+  if (isEmail(adminRecipient)) {
+    notifications.push(queueOrSendInvoiceEmail(companyId, {
+      purpose: 'system',
+      to: adminRecipient,
+      subject: 'Payment Update Notification',
+      text: `Invoice ${invoice?.invoiceNumber || ''}: payment ${Number(payment?.amount || 0).toFixed(2)} recorded. Remaining balance ${Number(invoice?.balance || 0).toFixed(2)}.`,
+      html: `<p>Payment update recorded.</p><p><strong>Invoice:</strong> ${invoice?.invoiceNumber || '-'}<br/><strong>Amount:</strong> ${Number(payment?.amount || 0).toFixed(2)}<br/><strong>Balance:</strong> ${Number(invoice?.balance || 0).toFixed(2)}</p>`
+    }));
+  }
+  await Promise.all(notifications);
+}
+
+async function notifyOutstandingReminder(companyId, invoice) {
+  if (!invoice || String(invoice.paymentStatus || '').toLowerCase() === 'paid' || !isEmail(invoice.customerEmail)) return;
+  await queueOrSendInvoiceEmail(companyId, {
+    purpose: 'reminder',
+    to: invoice.customerEmail,
+    subject: 'Outstanding Payment Reminder',
+    text: `Reminder: invoice ${invoice.invoiceNumber} has an outstanding balance of ${Number(invoice.balance || 0).toFixed(2)}.`,
+    html: `<p>This is a reminder that invoice <strong>${invoice.invoiceNumber}</strong> has an outstanding payment.</p><p><strong>Total:</strong> ${Number(invoice.totalAmount || 0).toFixed(2)}<br/><strong>Amount Paid:</strong> ${Number(invoice.amountPaid || 0).toFixed(2)}<br/><strong>Balance:</strong> ${Number(invoice.balance || 0).toFixed(2)}<br/><strong>Status:</strong> ${paymentStatusLabel(invoice.paymentStatus)}</p>`
+  });
+}
+
 async function processQueuedEmails(limit = 10) {
   const online = await hasInternetConnection();
   if (!online) return;
@@ -421,6 +536,22 @@ function reportToCsv(report) {
   lines.push('Customer,Transactions,Revenue');
   for (const row of report.customerSales || []) {
     lines.push([row.customerName, row.transactions, row.revenue].map(escapeCsvCell).join(','));
+  }
+  lines.push('');
+  lines.push('Invoice Payment Tracking');
+  lines.push('Invoice Number,Customer,Total Amount,Amount Paid,Balance,Payment Status,Initiated By,Last Payment By,Last Payment Date');
+  for (const row of report.invoicePayments || []) {
+    lines.push([
+      row.invoiceNumber,
+      row.customerName,
+      row.totalAmount,
+      row.amountPaid,
+      row.balance,
+      row.paymentStatus,
+      row.initiatedBy,
+      row.lastPaymentByName,
+      row.lastPaymentAt
+    ].map(escapeCsvCell).join(','));
   }
   return `${lines.join('\n')}\n`;
 }
@@ -959,12 +1090,18 @@ function registerIpcHandlers() {
   ipcMain.handle('invoices:create', async (_event, payload) => {
     requireClockIn();
     requirePermission('invoices', 'create');
-    const companySettings = await db.getCompanySettings(getActiveCompanyId());
+    const activeCompanyId = getActiveCompanyId();
+    const companySettings = await db.getCompanySettings(activeCompanyId);
     const taxValue = payload?.taxPercent;
     const hasExplicitTax = !(taxValue === undefined || taxValue === null || String(taxValue).trim() === '');
     const merged = { ...(payload || {}) };
     if (!hasExplicitTax) merged.taxPercent = Number(companySettings?.defaultTaxRate || 0);
-    return db.createInvoice(merged, getActiveCompanyId(), activeSession?.user?.id);
+    const created = await db.createInvoice(merged, activeCompanyId, activeSession?.user?.id);
+    await Promise.allSettled([
+      notifyInvoiceCreated(activeCompanyId, created),
+      notifyOutstandingReminder(activeCompanyId, created)
+    ]);
+    return created;
   });
   ipcMain.handle('invoices:getAll', async (_event, payload) => {
     requireClockIn();
@@ -984,7 +1121,14 @@ function registerIpcHandlers() {
   ipcMain.handle('invoices:addPayment', async (_event, payload) => {
     requireClockIn();
     requirePermission('invoices', 'edit');
-    return db.recordInvoicePayment(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+    const activeCompanyId = getActiveCompanyId();
+    const payment = await db.recordInvoicePayment(payload || {}, activeCompanyId, activeSession?.user?.id);
+    const invoice = await db.getInvoiceById(toPositiveInt(payload?.invoiceId, 'Invoice ID'), activeCompanyId);
+    await Promise.allSettled([
+      notifyInvoicePayment(activeCompanyId, invoice, payment),
+      notifyOutstandingReminder(activeCompanyId, invoice)
+    ]);
+    return payment;
   });
   ipcMain.handle('invoices:exportPdf', async (_event, payload) => {
     requireClockIn();
@@ -1090,7 +1234,8 @@ function registerIpcHandlers() {
     requireClockIn();
     requirePermission('reports', 'view');
     const period = String(payload?.period || 'daily');
-    return db.getSalesReport(period, getActiveCompanyId());
+    const paymentStatus = String(payload?.paymentStatus || 'all').toLowerCase();
+    return db.getSalesReport(period, getActiveCompanyId(), paymentStatus);
   });
   ipcMain.handle('reports:getInventory', async () => {
     requireClockIn();

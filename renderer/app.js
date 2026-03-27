@@ -119,7 +119,7 @@ const state = {
   clockIns: [],
   dashboardSalesReport: null,
   invoices: [],
-  invoiceDraft: { type: 'invoice', status: 'draft', date: '', invoiceNumber: '', customerId: '', taxPercent: 0, useDefaultTax: true, discountAmount: 0, validityPeriod: '', notes: '', items: [] }
+  invoiceDraft: { type: 'invoice', status: 'draft', date: '', invoiceNumber: '', customerId: '', taxPercent: 0, useDefaultTax: true, discountAmount: 0, amountPaid: 0, validityPeriod: '', notes: '', items: [] }
 };
 
 const sectionTitle = $('sectionTitle');
@@ -164,6 +164,7 @@ const dashboardAdminSection = $('dashboardAdminSection');
 const dashboardTopProductsBody = $('dashboardTopProductsBody');
 const dashboardCustomerSalesBody = $('dashboardCustomerSalesBody');
 const dashboardStaffClockInBody = $('dashboardStaffClockInBody');
+const dashboardDebtorsBody = $('dashboardDebtorsBody');
 const recentActivitiesList = $('recentActivitiesList');
 const lowStockListEl = $('lowStockList');
 const clockInGallery = $('clockInGallery');
@@ -219,12 +220,16 @@ const invoiceProductId = $('invoiceProductId');
 const invoiceItemQty = $('invoiceItemQty');
 const invoiceTaxPercent = $('invoiceTaxPercent');
 const invoiceDiscountAmount = $('invoiceDiscountAmount');
+const invoiceAmountPaid = $('invoiceAmountPaid');
 const invoiceValidityPeriod = $('invoiceValidityPeriod');
 const invoiceNotes = $('invoiceNotes');
 const invoiceUseDefaultTax = $('invoiceUseDefaultTax');
 const addInvoiceItemBtn = $('addInvoiceItemBtn');
 const invoiceItemsBody = $('invoiceItemsBody');
 const invoiceGrandTotal = $('invoiceGrandTotal');
+const invoiceAmountPaidDisplay = $('invoiceAmountPaidDisplay');
+const invoiceBalanceDisplay = $('invoiceBalanceDisplay');
+const invoicePaymentStatusDisplay = $('invoicePaymentStatusDisplay');
 const saveInvoiceBtn = $('saveInvoiceBtn');
 const saveAndPrintInvoiceBtn = $('saveAndPrintInvoiceBtn');
 const clearInvoiceDraftBtn = $('clearInvoiceDraftBtn');
@@ -233,6 +238,7 @@ const downloadPreviewPdfBtn = $('downloadPreviewPdfBtn');
 const invoicesTableBody = $('invoicesTableBody');
 
 const reportPeriod = $('reportPeriod');
+const reportPaymentStatus = $('reportPaymentStatus');
 const generateReportBtn = $('generateReportBtn');
 const exportReportBtn = $('exportReportBtn');
 const reportRangeLabel = $('reportRangeLabel');
@@ -241,6 +247,7 @@ const reportTotalTransactions = $('reportTotalTransactions');
 const reportTotalItems = $('reportTotalItems');
 const reportTopProductsBody = $('reportTopProductsBody');
 const reportCustomerSalesBody = $('reportCustomerSalesBody');
+const reportInvoicePaymentsBody = $('reportInvoicePaymentsBody');
 
 const companyCreateForm = $('companyCreateForm');
 const newCompanyName = $('newCompanyName');
@@ -722,6 +729,8 @@ function renderCustomers() {
 }
 
 const invoiceTypeLabel = (type) => (type === 'performa' || type === 'proforma' ? 'Performa Invoice' : type === 'quote' ? 'Quote' : 'Invoice');
+const paymentStatusLabel = (status) => (status === 'paid' ? 'Paid' : status === 'partial' ? 'Partial' : 'Unpaid');
+const paymentStatusClass = (status) => (status === 'paid' ? 'stock-pill' : 'stock-pill low');
 
 function getInvoiceBreakdown() {
   const subtotal = Number((state.invoiceDraft.items || []).reduce((sum, item) => sum + Number(item.lineTotal || 0), 0).toFixed(2));
@@ -729,7 +738,11 @@ function getInvoiceBreakdown() {
   const discountAmount = Math.max(0, Number(state.invoiceDraft.discountAmount || 0));
   const taxAmount = Number(((subtotal * taxPercent) / 100).toFixed(2));
   const total = Number(Math.max(0, subtotal + taxAmount - discountAmount).toFixed(2));
-  return { subtotal, taxPercent, taxAmount, discountAmount, total };
+  const amountPaid = Math.max(0, Number(state.invoiceDraft.amountPaid || 0));
+  const cappedPaid = Number(Math.min(total, amountPaid).toFixed(2));
+  const balance = Number((total - cappedPaid).toFixed(2));
+  const paymentStatus = cappedPaid <= 0 ? 'unpaid' : (cappedPaid + 0.0001 < total ? 'partial' : 'paid');
+  return { subtotal, taxPercent, taxAmount, discountAmount, total, amountPaid: cappedPaid, balance, paymentStatus };
 }
 
 function buildInvoicePayloadForTemplate() {
@@ -756,7 +769,10 @@ function buildInvoicePayloadForTemplate() {
       taxPercent: summary.taxPercent,
       taxAmount: summary.taxAmount,
       discountAmount: summary.discountAmount,
-      totalAmount: summary.total
+      totalAmount: summary.total,
+      amountPaid: summary.amountPaid,
+      balance: summary.balance,
+      paymentStatus: summary.paymentStatus
     },
     company: state.company || {},
     settings: state.invoiceSettings || {}
@@ -811,7 +827,11 @@ function renderInvoiceItems() {
         </tr>`);
     });
   }
-  invoiceGrandTotal.textContent = currency(getInvoiceBreakdown().total);
+  const summary = getInvoiceBreakdown();
+  invoiceGrandTotal.textContent = currency(summary.total);
+  if (invoiceAmountPaidDisplay) invoiceAmountPaidDisplay.textContent = currency(summary.amountPaid);
+  if (invoiceBalanceDisplay) invoiceBalanceDisplay.textContent = currency(summary.balance);
+  if (invoicePaymentStatusDisplay) invoicePaymentStatusDisplay.textContent = paymentStatusLabel(summary.paymentStatus);
 }
 
 function renderInvoiceTemplateFallback(payload) {
@@ -834,6 +854,7 @@ function renderInvoiceTemplateFallback(payload) {
       <div style="margin-top:6px;font-size:8px;"><strong>Customer:</strong> ${invoice.customerName || ''}</div>
       <table class="table table-sm mt-2"><thead><tr><th>SL.</th><th>Item</th><th>Price</th><th>Qty</th><th>Total</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No items</td></tr>'}</tbody></table>
       <div style="text-align:right;font-size:9px;"><strong>Total: ${currency(invoice.totalAmount || 0)}</strong></div>
+      <div style="text-align:right;font-size:8px;">Paid: ${currency(invoice.amountPaid || 0)} | Balance: ${currency(invoice.balance || 0)} | Status: ${paymentStatusLabel(invoice.paymentStatus)}</div>
       ${invoice.notes ? `<div style="margin-top:6px;font-size:8px;"><strong>Notes:</strong> ${String(invoice.notes || '').replace(/</g, '&lt;')}</div>` : ''}
       <div style="margin-top:8px;font-size:8px;"><strong>Terms:</strong> ${String(settings.termsConditions || '').replace(/</g, '&lt;').replace(/\n/g, '<br/>')}</div>
     </div>
@@ -858,10 +879,11 @@ function renderInvoicePreview() {
 function renderInvoices() {
   invoicesTableBody.innerHTML = '';
   if (!state.invoices.length) {
-    invoicesTableBody.innerHTML = '<tr><td colspan="7">No documents created yet.</td></tr>';
+    invoicesTableBody.innerHTML = '<tr><td colspan="12">No documents created yet.</td></tr>';
     return;
   }
   state.invoices.forEach((inv) => {
+    const paymentStatus = String(inv.paymentStatus || 'unpaid');
     invoicesTableBody.insertAdjacentHTML('beforeend', `<tr>
       <td>${inv.invoiceNumber}</td>
       <td>${invoiceTypeLabel(inv.type)}</td>
@@ -869,8 +891,14 @@ function renderInvoices() {
       <td>${new Date(inv.date).toLocaleDateString()}</td>
       <td>${inv.status}</td>
       <td>${currency(inv.totalAmount)}</td>
+      <td>${currency(inv.amountPaid || 0)}</td>
+      <td>${currency(inv.balance || 0)}</td>
+      <td><span class="${paymentStatusClass(paymentStatus)}">${paymentStatusLabel(paymentStatus)}</span></td>
+      <td>${inv.createdByUsername || 'N/A'}</td>
+      <td>${inv.lastPaymentByUsername || 'N/A'}</td>
       <td>
         ${can('invoices', 'view') ? `<button class="btn btn-sm btn-outline-secondary me-1" data-action="view-invoice" data-id="${inv.id}">View</button>` : ''}
+        ${can('invoices', 'edit') ? `<button class="btn btn-sm btn-outline-success me-1" data-action="add-payment" data-id="${inv.id}">Add Payment</button>` : ''}
         ${can('invoices', 'print') ? `<button class="btn btn-sm btn-outline-primary" data-action="export-invoice" data-id="${inv.id}">Export PDF</button>` : ''}
       </td>
     </tr>`);
@@ -887,6 +915,7 @@ function loadInvoiceIntoDraft(inv) {
   state.invoiceDraft.taxPercent = Number(inv.taxPercent || 0);
   state.invoiceDraft.useDefaultTax = false;
   state.invoiceDraft.discountAmount = Number(inv.discountAmount || 0);
+  state.invoiceDraft.amountPaid = Number(inv.amountPaid || 0);
   state.invoiceDraft.validityPeriod = String(inv.validityPeriod || '');
   state.invoiceDraft.notes = String(inv.notes || '');
   state.invoiceDraft.items = (Array.isArray(inv.items) ? inv.items : []).map((item) => ({
@@ -906,10 +935,26 @@ function loadInvoiceIntoDraft(inv) {
   invoiceTaxPercent.disabled = false;
   invoiceTaxPercent.value = String(state.invoiceDraft.taxPercent);
   invoiceDiscountAmount.value = String(state.invoiceDraft.discountAmount);
+  invoiceAmountPaid.value = String(state.invoiceDraft.amountPaid);
   invoiceValidityPeriod.value = state.invoiceDraft.validityPeriod;
   invoiceNotes.value = state.invoiceDraft.notes;
   renderInvoiceItems();
   renderInvoicePreview();
+}
+
+async function addInvoicePaymentFlow(invoiceId) {
+  const id = Number(invoiceId || 0);
+  if (!id) return;
+  const amountText = window.prompt('Enter payment amount:');
+  if (amountText === null) return;
+  const amount = Number(amountText);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment amount must be greater than 0.');
+  const note = String(window.prompt('Payment note (optional):') || '').trim();
+  await api.addInvoicePayment({ invoiceId: id, amount, note });
+  const updated = await api.getInvoiceById(id);
+  loadInvoiceIntoDraft(updated);
+  await refreshData();
+  showStatus(`Payment added to ${updated.invoiceNumber}.`);
 }
 
 function renderUsers() {
@@ -1031,6 +1076,24 @@ function renderDashboard(stats, salesReport = null) {
       if (!clockSummary.length) dashboardStaffClockInBody.innerHTML = '<tr><td colspan="2">No clock-in data yet.</td></tr>';
       else clockSummary.forEach((row) => dashboardStaffClockInBody.insertAdjacentHTML('beforeend', `<tr><td>${row.username}</td><td>${row.clockIns}</td></tr>`));
     }
+    if (dashboardDebtorsBody) {
+      dashboardDebtorsBody.innerHTML = '';
+      const debtors = Array.isArray(stats.debtors) ? stats.debtors : [];
+      if (!debtors.length) dashboardDebtorsBody.innerHTML = '<tr><td colspan="8">No outstanding debtor invoices.</td></tr>';
+      else debtors.forEach((row) => dashboardDebtorsBody.insertAdjacentHTML('beforeend', `<tr>
+        <td>${row.customerName || '-'}</td>
+        <td>${row.invoiceNumber || '-'}</td>
+        <td>${currency(row.totalAmount || 0)}</td>
+        <td>${currency(row.amountPaid || 0)}</td>
+        <td>${currency(row.balance || 0)}</td>
+        <td>${row.lastPaymentAt ? new Date(row.lastPaymentAt).toLocaleString() : 'N/A'}</td>
+        <td><span class="${paymentStatusClass(row.paymentStatus)}">${paymentStatusLabel(row.paymentStatus)}</span></td>
+        <td>
+          ${can('invoices', 'view') ? `<button class="btn btn-sm btn-outline-secondary me-1" data-action="view-invoice" data-id="${row.invoiceId}">Open</button>` : ''}
+          ${can('invoices', 'edit') ? `<button class="btn btn-sm btn-outline-success" data-action="add-payment" data-id="${row.invoiceId}">Add Payment</button>` : ''}
+        </td>
+      </tr>`));
+    }
   }
   if (recentActivitiesList) {
     const activities = Array.isArray(stats.recentActivities) ? stats.recentActivities : [];
@@ -1099,6 +1162,21 @@ function renderReport(report) {
   for (const r of report.topProducts) reportTopProductsBody.insertAdjacentHTML('beforeend', `<tr><td>${r.name}</td><td>${r.unitsSold}</td><td>${currency(r.revenue)}</td></tr>`);
   reportCustomerSalesBody.innerHTML = report.customerSales.length ? '' : '<tr><td colspan="3">No customer sales in selected period.</td></tr>';
   for (const r of report.customerSales) reportCustomerSalesBody.insertAdjacentHTML('beforeend', `<tr><td>${r.customerName}</td><td>${r.transactions}</td><td>${currency(r.revenue)}</td></tr>`);
+  if (reportInvoicePaymentsBody) {
+    const rows = Array.isArray(report.invoicePayments) ? report.invoicePayments : [];
+    reportInvoicePaymentsBody.innerHTML = rows.length ? '' : '<tr><td colspan="9">No invoice payment data in selected period.</td></tr>';
+    rows.forEach((r) => reportInvoicePaymentsBody.insertAdjacentHTML('beforeend', `<tr>
+      <td>${r.invoiceNumber || '-'}</td>
+      <td>${r.customerName || '-'}</td>
+      <td>${currency(r.totalAmount || 0)}</td>
+      <td>${currency(r.amountPaid || 0)}</td>
+      <td>${currency(r.balance || 0)}</td>
+      <td><span class="${paymentStatusClass(r.paymentStatus)}">${paymentStatusLabel(r.paymentStatus)}</span></td>
+      <td>${r.initiatedBy || 'N/A'}</td>
+      <td>${r.lastPaymentByName || 'N/A'}</td>
+      <td>${r.lastPaymentAt ? new Date(r.lastPaymentAt).toLocaleString() : 'N/A'}</td>
+    </tr>`));
+  }
 }
 
 async function startCamera() {
@@ -1128,7 +1206,7 @@ async function refreshData() {
     can('suppliers', 'view') ? api.getSuppliers() : Promise.resolve([]),
     can('customers', 'view') ? api.getCustomers() : Promise.resolve([]),
     can('products', 'view') ? api.getProducts() : Promise.resolve([]),
-    can('dashboard', 'view') ? api.getDashboardStats() : Promise.resolve({ totalProducts: 0, totalSales: 0, totalTransactions: 0, lowStock: [], recentClockIns: [], periods: {}, topSellingProducts: [], staffClockInSummary: [], recentActivities: [] }),
+    can('dashboard', 'view') ? api.getDashboardStats() : Promise.resolve({ totalProducts: 0, totalSales: 0, totalTransactions: 0, lowStock: [], recentClockIns: [], periods: {}, topSellingProducts: [], staffClockInSummary: [], debtors: [], recentActivities: [] }),
     can('company', 'view') ? api.getActiveCompany() : Promise.resolve({}),
     can('invoices', 'view') ? api.getInvoices({ limit: 100 }) : Promise.resolve([]),
     can('dashboard', 'view') ? api.getRecentClockIns({ limit: 300, allCompanies: Boolean(state.session?.user?.isAdmin) }) : Promise.resolve([]),
@@ -1205,6 +1283,7 @@ async function resetInvoiceDraft() {
     taxPercent: Number(state.invoiceSettings.defaultTaxRate || 0),
     useDefaultTax: true,
     discountAmount: 0,
+    amountPaid: 0,
     validityPeriod: '',
     notes: '',
     items: []
@@ -1219,6 +1298,7 @@ async function resetInvoiceDraft() {
   invoiceTaxPercent.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
   invoiceTaxPercent.disabled = true;
   invoiceDiscountAmount.value = '0';
+  invoiceAmountPaid.value = '0';
   invoiceValidityPeriod.value = '';
   invoiceNotes.value = '';
   await refreshInvoiceNumber();
@@ -1382,6 +1462,7 @@ invoiceTaxPercent.addEventListener('input', () => {
   renderInvoicePreview();
 });
 invoiceDiscountAmount.addEventListener('input', () => { state.invoiceDraft.discountAmount = Math.max(0, Number(invoiceDiscountAmount.value || 0)); renderInvoiceItems(); renderInvoicePreview(); });
+invoiceAmountPaid.addEventListener('input', () => { state.invoiceDraft.amountPaid = Math.max(0, Number(invoiceAmountPaid.value || 0)); renderInvoiceItems(); renderInvoicePreview(); });
 invoiceValidityPeriod.addEventListener('input', () => { state.invoiceDraft.validityPeriod = String(invoiceValidityPeriod.value || '').trim(); renderInvoicePreview(); });
 invoiceNotes.addEventListener('input', () => { state.invoiceDraft.notes = String(invoiceNotes.value || '').trim(); renderInvoicePreview(); });
 invoiceNumber.addEventListener('input', () => { state.invoiceDraft.invoiceNumber = invoiceNumber.value.trim(); renderInvoicePreview(); });
@@ -1446,6 +1527,7 @@ saveInvoiceBtn.addEventListener('click', async () => {
       customerId: chosenCustomerId,
       taxPercent: state.invoiceDraft.useDefaultTax ? '' : Math.max(0, Number(invoiceTaxPercent.value || 0)),
       discountAmount: Math.max(0, Number(invoiceDiscountAmount.value || 0)),
+      amountPaid: Math.max(0, Number(invoiceAmountPaid.value || 0)),
       validityPeriod: String(invoiceValidityPeriod.value || '').trim(),
       notes: String(invoiceNotes.value || '').trim(),
       items: state.invoiceDraft.items.map((item) => ({ productId: item.productId, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) }))
@@ -1470,6 +1552,7 @@ saveAndPrintInvoiceBtn.addEventListener('click', async () => {
       customerId: chosenCustomerId,
       taxPercent: state.invoiceDraft.useDefaultTax ? '' : Math.max(0, Number(invoiceTaxPercent.value || 0)),
       discountAmount: Math.max(0, Number(invoiceDiscountAmount.value || 0)),
+      amountPaid: Math.max(0, Number(invoiceAmountPaid.value || 0)),
       validityPeriod: String(invoiceValidityPeriod.value || '').trim(),
       notes: String(invoiceNotes.value || '').trim(),
       items: state.invoiceDraft.items.map((item) => ({ productId: item.productId, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) }))
@@ -1503,6 +1586,7 @@ downloadPreviewPdfBtn.addEventListener('click', async () => {
       customerId,
       taxPercent: state.invoiceDraft.useDefaultTax ? Number(state.invoiceSettings.defaultTaxRate || 0) : Math.max(0, Number(invoiceTaxPercent.value || 0)),
       discountAmount: Math.max(0, Number(invoiceDiscountAmount.value || 0)),
+      amountPaid: Math.max(0, Number(invoiceAmountPaid.value || 0)),
       validityPeriod: String(invoiceValidityPeriod.value || '').trim(),
       notes: String(invoiceNotes.value || '').trim(),
       termsConditions: settingsTermsConditions?.value || state.invoiceSettings.termsConditions || '',
@@ -1524,12 +1608,36 @@ invoicesTableBody.addEventListener('click', async (e) => {
       showStatus(`${invoiceTypeLabel(inv.type)} loaded into preview.`);
       return;
     }
+    if (btn.dataset.action === 'add-payment') {
+      await addInvoicePaymentFlow(Number(btn.dataset.id));
+      return;
+    }
     if (btn.dataset.action === 'export-invoice') {
       const result = await api.exportInvoicePdf({ id: Number(btn.dataset.id), openAfterSave: true });
       if (result.cancelled) return showStatus('Export cancelled.', 'warning');
       showStatus(`PDF exported: ${result.filePath}`);
     }
-  } catch (err) { showStatus(err.message || 'PDF export failed.', 'error'); }
+  } catch (err) { showStatus(err.message || 'Invoice action failed.', 'error'); }
+});
+
+dashboardDebtorsBody?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  try {
+    if (btn.dataset.action === 'view-invoice') {
+      const inv = await api.getInvoiceById(Number(btn.dataset.id));
+      loadInvoiceIntoDraft(inv);
+      setActiveSection('invoices');
+      showStatus(`${invoiceTypeLabel(inv.type)} loaded into preview.`);
+      return;
+    }
+    if (btn.dataset.action === 'add-payment') {
+      await addInvoicePaymentFlow(Number(btn.dataset.id));
+      return;
+    }
+  } catch (err) {
+    showStatus(err.message || 'Debtor action failed.', 'error');
+  }
 });
 
 roleForm.addEventListener('submit', async (e) => {
@@ -1588,7 +1696,7 @@ restartInstallBtn?.addEventListener('click', async () => {
   }
 });
 
-generateReportBtn.addEventListener('click', async () => { try { renderReport(await api.getSalesReport({ period: reportPeriod.value })); showStatus('Report generated.'); } catch (err) { showStatus(err.message || 'Report failed.', 'error'); } });
+generateReportBtn.addEventListener('click', async () => { try { renderReport(await api.getSalesReport({ period: reportPeriod.value, paymentStatus: reportPaymentStatus?.value || 'all' })); showStatus('Report generated.'); } catch (err) { showStatus(err.message || 'Report failed.', 'error'); } });
 exportReportBtn.addEventListener('click', async () => { try { if (!state.report) throw new Error('Generate report first.'); const res = await api.exportSalesReportCsv(state.report); if (res.cancelled) return showStatus('CSV export cancelled.', 'warning'); showStatus(`Report exported: ${res.filePath}`); } catch (err) { showStatus(err.message || 'CSV export failed.', 'error'); } });
 
 companyCreateForm.addEventListener('submit', async (e) => { e.preventDefault(); try { const name = newCompanyName.value.trim(); if (!name) throw new Error('Company name is required.'); await api.createCompany({ name }); newCompanyName.value = ''; await safeRefresh(); showStatus('Company created.'); } catch (err) { showStatus(err.message || 'Unable to create company.', 'error'); } });

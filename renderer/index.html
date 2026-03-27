@@ -179,6 +179,17 @@
               </div>
             </article>
           </div>
+          <div class="col-12">
+            <article class="panel-card">
+              <div class="panel-title">Debtors (Admin)</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Customer</th><th>Invoice</th><th>Total</th><th>Paid</th><th>Balance</th><th>Last Payment</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody id="dashboardDebtorsBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
         </div>
         <article class="panel-card mt-3">
           <div class="panel-title">Recent Activities</div>
@@ -536,6 +547,10 @@
                   <input id="invoiceDiscountAmount" type="number" min="0" step="0.01" class="form-control" value="0" />
                 </div>
                 <div class="col-md-6">
+                  <label class="form-label" for="invoiceAmountPaid">Amount Paid</label>
+                  <input id="invoiceAmountPaid" type="number" min="0" step="0.01" class="form-control" value="0" />
+                </div>
+                <div class="col-md-6">
                   <label class="form-label" for="invoiceValidityPeriod">Validity Period (Quote/Performa)</label>
                   <input id="invoiceValidityPeriod" type="text" class="form-control" placeholder="e.g., 30 days" />
                 </div>
@@ -563,6 +578,18 @@
               <div class="invoice-totals mt-2">
                 <span>Total:</span>
                 <strong id="invoiceGrandTotal">$0.00</strong>
+              </div>
+              <div class="invoice-totals mt-1">
+                <span>Paid:</span>
+                <strong id="invoiceAmountPaidDisplay">$0.00</strong>
+              </div>
+              <div class="invoice-totals mt-1">
+                <span>Balance:</span>
+                <strong id="invoiceBalanceDisplay">$0.00</strong>
+              </div>
+              <div class="invoice-totals mt-1">
+                <span>Payment Status:</span>
+                <strong id="invoicePaymentStatusDisplay">Unpaid</strong>
               </div>
 
               <div class="d-flex gap-2 mt-3">
@@ -596,6 +623,11 @@
                   <th>Date</th>
                   <th>Status</th>
                   <th>Total</th>
+                  <th>Paid</th>
+                  <th>Balance</th>
+                  <th>Payment</th>
+                  <th>Created By</th>
+                  <th>Last Payment By</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -616,7 +648,16 @@
                 <option value="monthly">Monthly</option>
               </select>
             </div>
-            <div class="col-lg-8 d-flex gap-2">
+            <div class="col-lg-4">
+              <label class="form-label" for="reportPaymentStatus">Payment Filter</label>
+              <select id="reportPaymentStatus" class="form-select">
+                <option value="all">All</option>
+                <option value="paid">Paid</option>
+                <option value="partial">Partial</option>
+                <option value="unpaid">Unpaid</option>
+              </select>
+            </div>
+            <div class="col-lg-4 d-flex gap-2">
               <button id="generateReportBtn" class="btn btn-dark">Generate Report</button>
               <button id="exportReportBtn" class="btn btn-outline-success" disabled>Export CSV</button>
               <span id="reportRangeLabel" class="report-range"></span>
@@ -654,6 +695,15 @@
             </article>
           </div>
         </div>
+        <article class="panel-card mt-3">
+          <div class="panel-title">Invoice Payment Tracking</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Initiated By</th><th>Last Payment By</th><th>Last Payment Date</th></tr></thead>
+              <tbody id="reportInvoicePaymentsBody"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
 
       <section id="section-company" class="app-section">
