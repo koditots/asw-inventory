@@ -58,6 +58,18 @@ const apiFromIpc = ipcFallback ? {
   getSuppliers: () => ipcFallback.invoke('suppliers:getAll'),
   updateSupplier: (payload) => ipcFallback.invoke('suppliers:update', payload),
   deleteSupplier: (id) => ipcFallback.invoke('suppliers:delete', { id }),
+  getWallet: () => ipcFallback.invoke('wallet:get'),
+  getVendors: (payload) => ipcFallback.invoke('vendors:getAll', payload),
+  createVendor: (payload) => ipcFallback.invoke('vendors:create', payload),
+  getExpenseCategories: () => ipcFallback.invoke('expenses:categories:getAll'),
+  createExpenseCategory: (payload) => ipcFallback.invoke('expenses:categories:create', payload),
+  getExpenses: (payload) => ipcFallback.invoke('expenses:getAll', payload),
+  createExpense: (payload) => ipcFallback.invoke('expenses:create', payload),
+  getIncomeCategories: () => ipcFallback.invoke('income:categories:getAll'),
+  createIncomeCategory: (payload) => ipcFallback.invoke('income:categories:create', payload),
+  getIncome: (payload) => ipcFallback.invoke('income:getAll', payload),
+  createIncome: (payload) => ipcFallback.invoke('income:create', payload),
+  getCashflowTransactions: (payload) => ipcFallback.invoke('cashflow:transactions:getAll', payload),
   createCustomer: (payload) => ipcFallback.invoke('customers:create', payload),
   getCustomers: () => ipcFallback.invoke('customers:getAll'),
   updateCustomer: (payload) => ipcFallback.invoke('customers:update', payload),
@@ -87,6 +99,9 @@ const apiFromIpc = ipcFallback ? {
   getDashboardStats: () => ipcFallback.invoke('dashboard:getStats'),
   getRecentActivities: (payload) => ipcFallback.invoke('dashboard:getActivities', payload),
   getSalesReport: (payload) => ipcFallback.invoke('reports:getSales', payload),
+  getExpenseReport: (payload) => ipcFallback.invoke('reports:getExpenses', payload),
+  getIncomeReport: (payload) => ipcFallback.invoke('reports:getIncome', payload),
+  getCashflowReport: (payload) => ipcFallback.invoke('reports:getCashflow', payload),
   getInventoryReport: () => ipcFallback.invoke('reports:getInventory'),
   getProfitLossReport: (payload) => ipcFallback.invoke('reports:getProfitLoss', payload),
   getStaffPerformanceReport: (payload) => ipcFallback.invoke('reports:getStaffPerformance', payload),
@@ -109,6 +124,13 @@ const state = {
   products: [],
   categories: [],
   suppliers: [],
+  vendors: [],
+  expenseCategories: [],
+  incomeCategories: [],
+  expenses: [],
+  incomes: [],
+  cashflowTransactions: [],
+  wallet: { currentBalance: 0, lastUpdatedAt: '' },
   customers: [],
   users: [],
   report: null,
@@ -162,6 +184,10 @@ const totalTransactionsEl = $('totalTransactions');
 const dailyRevenueEl = $('dailyRevenue');
 const weeklyRevenueEl = $('weeklyRevenue');
 const monthlyRevenueEl = $('monthlyRevenue');
+const walletBalanceEl = $('walletBalance');
+const walletStatusText = $('walletStatusText');
+const walletInflowEl = $('walletInflow');
+const walletOutflowEl = $('walletOutflow');
 const dashboardSalesChart = $('dashboardSalesChart');
 const dashboardChartEmpty = $('dashboardChartEmpty');
 const dashboardAdminSection = $('dashboardAdminSection');
@@ -213,6 +239,35 @@ const customerName = $('customerName');
 const customerPhone = $('customerPhone');
 const customerEmail = $('customerEmail');
 const customersTableBody = $('customersTableBody');
+
+const expenseForm = $('expenseForm');
+const expenseVendorId = $('expenseVendorId');
+const expenseNewVendorName = $('expenseNewVendorName');
+const expenseNewVendorType = $('expenseNewVendorType');
+const addVendorQuickBtn = $('addVendorQuickBtn');
+const expenseCategoryId = $('expenseCategoryId');
+const expenseCategoryName = $('expenseCategoryName');
+const addExpenseCategoryBtn = $('addExpenseCategoryBtn');
+const expenseAmount = $('expenseAmount');
+const expenseDate = $('expenseDate');
+const expenseDescription = $('expenseDescription');
+const expensesTableBody = $('expensesTableBody');
+const vendorsTableBody = $('vendorsTableBody');
+
+const incomeForm = $('incomeForm');
+const incomeCategoryId = $('incomeCategoryId');
+const incomeCategoryName = $('incomeCategoryName');
+const addIncomeCategoryBtn = $('addIncomeCategoryBtn');
+const incomeAmount = $('incomeAmount');
+const incomeDate = $('incomeDate');
+const incomeSourceName = $('incomeSourceName');
+const incomeDescription = $('incomeDescription');
+const incomeTableBody = $('incomeTableBody');
+
+const cashflowBalance = $('cashflowBalance');
+const cashflowIn = $('cashflowIn');
+const cashflowOut = $('cashflowOut');
+const transactionsTableBody = $('transactionsTableBody');
 const invoiceForm = $('invoiceForm');
 const invoiceType = $('invoiceType');
 const invoiceStatus = $('invoiceStatus');
@@ -253,6 +308,12 @@ const reportTotalItems = $('reportTotalItems');
 const reportTopProductsBody = $('reportTopProductsBody');
 const reportCustomerSalesBody = $('reportCustomerSalesBody');
 const reportInvoicePaymentsBody = $('reportInvoicePaymentsBody');
+const reportTotalExpenses = $('reportTotalExpenses');
+const reportTotalExtraIncome = $('reportTotalExtraIncome');
+const reportNetCashflow = $('reportNetCashflow');
+const reportExpenseByCategoryBody = $('reportExpenseByCategoryBody');
+const reportExpenseByVendorBody = $('reportExpenseByVendorBody');
+const reportIncomeByCategoryBody = $('reportIncomeByCategoryBody');
 
 const companyCreateForm = $('companyCreateForm');
 const newCompanyName = $('newCompanyName');
@@ -318,6 +379,10 @@ const navSvgs = {
   categories: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>',
   suppliers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18v12H3z"/><path d="M7 7V4h10v3"/></svg>',
   customers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+  expenses: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+  vendors: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 11h1M14 11h1M9 15h1M14 15h1"/></svg>',
+  income: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20"/><path d="M7 7c0-2.2 2.2-4 5-4s5 1.8 5 4-2.2 4-5 4-5 1.8-5 4 2.2 4 5 4 5-1.8 5-4"/></svg>',
+  cashflow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h6l2-4 4 8 2-4h4"/></svg>',
   invoices: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
   clockin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
   reports: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5h16v14H4z"/><path d="M8 15l2-2 2 1 4-4"/></svg>',
@@ -358,7 +423,7 @@ const menuItemMeta = {
 const currency = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v || 0);
 const fileUrl = (p) => encodeURI(`file:///${String(p || '').replace(/\\/g, '/')}`);
 const isEmail = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-const permissionModules = ['dashboard', 'products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'reports', 'company', 'users', 'roles', 'settings'];
+const permissionModules = ['dashboard', 'products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'reports', 'company', 'users', 'roles', 'settings', 'expenses', 'vendors', 'income', 'cashflow'];
 const permissionActions = ['view', 'create', 'edit', 'delete', 'print'];
 
 function can(moduleName, action = 'view') {
@@ -460,6 +525,8 @@ function initPopupFormLaunchers() {
   attachFormPopupLauncher(supplierForm, 'Supplier Form');
   attachFormPopupLauncher(customerForm, 'Customer Form');
   attachFormPopupLauncher(invoiceForm, 'Invoice Form');
+  attachFormPopupLauncher(expenseForm, 'Expense Form');
+  attachFormPopupLauncher(incomeForm, 'Income Form');
   attachFormPopupLauncher(userForm, 'User Form');
   attachFormPopupLauncher(roleForm, 'Role Form');
 }
@@ -668,6 +735,10 @@ function renderSectionAccess() {
     suppliers: 'suppliers',
     customers: 'customers',
     invoices: 'invoices',
+    expenses: 'expenses',
+    vendors: 'vendors',
+    income: 'income',
+    cashflow: 'cashflow',
     clockin: 'dashboard',
     reports: 'reports',
     company: 'company',
@@ -696,6 +767,10 @@ function applyFormAccess() {
   toggle('#invoiceForm input, #invoiceForm select, #invoiceForm button', can('invoices', 'create'));
   toggle('#saveInvoiceBtn, #saveAndPrintInvoiceBtn', can('invoices', 'create'));
   toggle('#downloadPreviewPdfBtn', can('invoices', 'print'));
+  toggle('#expenseForm input, #expenseForm select, #expenseForm button', can('expenses', 'create') || can('expenses', 'edit'));
+  toggle('#incomeForm input, #incomeForm select, #incomeForm button', can('income', 'create') || can('income', 'edit'));
+  if (addExpenseCategoryBtn) addExpenseCategoryBtn.style.display = (can('expenses', 'edit') && Boolean(state.session?.user?.isAdmin)) ? '' : 'none';
+  if (addIncomeCategoryBtn) addIncomeCategoryBtn.style.display = (can('income', 'edit') && Boolean(state.session?.user?.isAdmin)) ? '' : 'none';
   toggle('#generateReportBtn', can('reports', 'view'));
   toggle('#exportReportBtn', can('reports', 'print'));
   toggle('#userForm input, #userForm select, #userForm button[type="submit"]', can('users', 'create') || can('users', 'edit'));
@@ -718,7 +793,10 @@ function renderLookups() {
     sp: saleProductIdInput.value,
     sc: saleCustomerIdInput.value,
     ic: invoiceCustomerId.value,
-    ip: invoiceProductId.value
+    ip: invoiceProductId.value,
+    ev: expenseVendorId?.value || '',
+    ec: expenseCategoryId?.value || '',
+    inc: incomeCategoryId?.value || ''
   };
   categoryIdInput.innerHTML = '<option value="">Uncategorized</option>';
   filterCategory.innerHTML = '<option value="">All Categories</option>';
@@ -740,6 +818,18 @@ function renderLookups() {
   for (const c of state.customers) saleCustomerIdInput.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
   invoiceCustomerId.innerHTML = '<option value="">Select Customer</option>';
   for (const c of state.customers) invoiceCustomerId.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
+  if (expenseVendorId) {
+    expenseVendorId.innerHTML = '<option value="">Select Vendor</option>';
+    for (const v of state.vendors) expenseVendorId.insertAdjacentHTML('beforeend', `<option value="${v.id}">${v.name} (${v.type})</option>`);
+  }
+  if (expenseCategoryId) {
+    expenseCategoryId.innerHTML = '<option value="">Select Category</option>';
+    for (const c of state.expenseCategories) expenseCategoryId.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
+  }
+  if (incomeCategoryId) {
+    incomeCategoryId.innerHTML = '<option value="">Select Category</option>';
+    for (const c of state.incomeCategories) incomeCategoryId.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
+  }
   categoryIdInput.value = saved.c;
   supplierIdInput.value = saved.s;
   filterCategory.value = saved.fc;
@@ -753,6 +843,9 @@ function renderLookups() {
     state.invoiceDraft.customerId = invoiceCustomerId.value;
   }
   invoiceProductId.value = saved.ip;
+  if (expenseVendorId) expenseVendorId.value = saved.ev;
+  if (expenseCategoryId) expenseCategoryId.value = saved.ec;
+  if (incomeCategoryId) incomeCategoryId.value = saved.inc;
 }
 
 function renderProducts() {
@@ -790,6 +883,43 @@ function renderCustomers() {
     const statusClass = isDebtor ? 'stock-pill low' : 'stock-pill';
     const statusText = isDebtor ? 'Debtor' : 'Cleared';
     customersTableBody.insertAdjacentHTML('beforeend', `<tr><td>${c.id}</td><td>${c.name}</td><td>${c.phone || 'N/A'}</td><td>${c.email || 'N/A'}</td><td>${currency(outstanding)}</td><td><span class="${statusClass}">${statusText}</span></td><td>${can('customers', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-customer" data-id="${c.id}">Edit</button>` : ''} ${can('customers', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-customer" data-id="${c.id}">Delete</button>` : ''}</td></tr>`);
+  }
+}
+
+function renderVendors() {
+  if (!vendorsTableBody) return;
+  renderBasicTable(vendorsTableBody, state.vendors, 6, 'No vendors available.');
+  for (const v of state.vendors) {
+    vendorsTableBody.insertAdjacentHTML('beforeend', `<tr><td>${v.name}</td><td>${v.type}</td><td>${v.phone || 'N/A'}</td><td>${v.email || 'N/A'}</td><td>${v.address || 'N/A'}</td><td>${v.createdByName || 'N/A'}</td></tr>`);
+  }
+}
+
+function renderExpenses() {
+  if (!expensesTableBody) return;
+  renderBasicTable(expensesTableBody, state.expenses, 6, 'No expenses recorded yet.');
+  for (const e of state.expenses) {
+    expensesTableBody.insertAdjacentHTML('beforeend', `<tr><td>${new Date(e.createdAt).toLocaleString()}</td><td>${e.vendorName}</td><td>${e.categoryName}</td><td>${e.description || '-'}</td><td>${currency(e.amount)}</td><td>${e.createdByName || 'N/A'}</td></tr>`);
+  }
+}
+
+function renderIncome() {
+  if (!incomeTableBody) return;
+  renderBasicTable(incomeTableBody, state.incomes, 6, 'No additional inflows recorded yet.');
+  for (const i of state.incomes) {
+    incomeTableBody.insertAdjacentHTML('beforeend', `<tr><td>${new Date(i.createdAt).toLocaleString()}</td><td>${i.categoryName}</td><td>${i.sourceName}</td><td>${i.description || '-'}</td><td>${currency(i.amount)}</td><td>${i.createdByName || 'N/A'}</td></tr>`);
+  }
+}
+
+function renderCashflow() {
+  if (!transactionsTableBody) return;
+  if (cashflowBalance) cashflowBalance.textContent = currency(state.wallet?.currentBalance || 0);
+  const inflow = state.cashflowTransactions.filter((t) => t.direction === 'in').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const outflow = state.cashflowTransactions.filter((t) => t.direction === 'out').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  if (cashflowIn) cashflowIn.textContent = currency(inflow);
+  if (cashflowOut) cashflowOut.textContent = currency(outflow);
+  renderBasicTable(transactionsTableBody, state.cashflowTransactions, 6, 'No cashflow transactions yet.');
+  for (const t of state.cashflowTransactions) {
+    transactionsTableBody.insertAdjacentHTML('beforeend', `<tr><td>${new Date(t.createdAt).toLocaleString()}</td><td>${t.type}</td><td>${t.direction}</td><td>${currency(t.amount)}</td><td>${currency(t.balanceAfter)}</td><td>${t.createdByName || 'N/A'}</td></tr>`);
   }
 }
 
@@ -1141,6 +1271,14 @@ function renderDashboard(stats, salesReport = null) {
   if (dailyRevenueEl) dailyRevenueEl.textContent = currency(stats.periods?.daily?.revenue || 0);
   if (weeklyRevenueEl) weeklyRevenueEl.textContent = currency(stats.periods?.weekly?.revenue || 0);
   if (monthlyRevenueEl) monthlyRevenueEl.textContent = currency(stats.periods?.monthly?.revenue || 0);
+  if (walletBalanceEl) walletBalanceEl.textContent = currency(stats.walletBalance || 0);
+  if (walletInflowEl) walletInflowEl.textContent = currency(stats.totalInflow || 0);
+  if (walletOutflowEl) walletOutflowEl.textContent = currency(stats.totalOutflow || 0);
+  if (walletStatusText) {
+    const bal = Number(stats.walletBalance || 0);
+    walletStatusText.textContent = bal >= 0 ? 'Positive' : 'Negative (Debt Warning)';
+    walletStatusText.style.color = bal >= 0 ? '#1f7d42' : '#b42318';
+  }
   drawDashboardSalesChart(stats.periods || {});
   lowStockListEl.innerHTML = '';
   if (!stats.lowStock?.length) lowStockListEl.innerHTML = '<li style="background:#effcf3;color:#2d7d3c;">No low stock alerts.</li>';
@@ -1241,7 +1379,7 @@ function renderCompany() {
   if (c.signaturePath) companySignaturePreview.src = fileUrl(c.signaturePath); else companySignaturePreview.removeAttribute('src');
 }
 
-function renderReport(report) {
+function renderReport(report, expenseReport = null, incomeReport = null, cashflowReport = null) {
   state.report = report;
   exportReportBtn.disabled = false;
   reportRangeLabel.textContent = `${new Date(report.startDate).toLocaleString()} - ${new Date(report.endDate).toLocaleString()}`;
@@ -1267,6 +1405,24 @@ function renderReport(report) {
       <td>${r.lastPaymentAt ? new Date(r.lastPaymentAt).toLocaleString() : 'N/A'}</td>
     </tr>`));
   }
+  if (reportTotalExpenses) reportTotalExpenses.textContent = currency(expenseReport?.totalExpenses || 0);
+  if (reportTotalExtraIncome) reportTotalExtraIncome.textContent = currency(incomeReport?.totalIncome || 0);
+  if (reportNetCashflow) reportNetCashflow.textContent = currency(cashflowReport?.net || 0);
+  if (reportExpenseByCategoryBody) {
+    const rows = Array.isArray(expenseReport?.byCategory) ? expenseReport.byCategory : [];
+    reportExpenseByCategoryBody.innerHTML = rows.length ? '' : '<tr><td colspan="2">No expense category data.</td></tr>';
+    rows.forEach((r) => reportExpenseByCategoryBody.insertAdjacentHTML('beforeend', `<tr><td>${r.categoryName}</td><td>${currency(r.total || 0)}</td></tr>`));
+  }
+  if (reportExpenseByVendorBody) {
+    const rows = Array.isArray(expenseReport?.byVendor) ? expenseReport.byVendor : [];
+    reportExpenseByVendorBody.innerHTML = rows.length ? '' : '<tr><td colspan="2">No vendor expense data.</td></tr>';
+    rows.forEach((r) => reportExpenseByVendorBody.insertAdjacentHTML('beforeend', `<tr><td>${r.vendorName}</td><td>${currency(r.total || 0)}</td></tr>`));
+  }
+  if (reportIncomeByCategoryBody) {
+    const rows = Array.isArray(incomeReport?.byCategory) ? incomeReport.byCategory : [];
+    reportIncomeByCategoryBody.innerHTML = rows.length ? '' : '<tr><td colspan="2">No income category data.</td></tr>';
+    rows.forEach((r) => reportIncomeByCategoryBody.insertAdjacentHTML('beforeend', `<tr><td>${r.categoryName}</td><td>${currency(r.total || 0)}</td></tr>`));
+  }
 }
 
 async function startCamera() {
@@ -1291,12 +1447,19 @@ async function refreshSession() {
 }
 
 async function refreshData() {
-  const [categories, suppliers, customers, products, stats, company, invoices, clockIns, dashboardSalesReport] = await Promise.all([
+  const [categories, suppliers, customers, products, vendors, expenseCategories, incomeCategories, expenses, incomes, wallet, transactions, stats, company, invoices, clockIns, dashboardSalesReport] = await Promise.all([
     can('categories', 'view') ? api.getCategories() : Promise.resolve([]),
     can('suppliers', 'view') ? api.getSuppliers() : Promise.resolve([]),
     can('customers', 'view') ? api.getCustomers() : Promise.resolve([]),
     can('products', 'view') ? api.getProducts() : Promise.resolve([]),
-    can('dashboard', 'view') ? api.getDashboardStats() : Promise.resolve({ totalProducts: 0, totalSales: 0, totalTransactions: 0, lowStock: [], recentClockIns: [], periods: {}, topSellingProducts: [], staffClockInSummary: [], debtors: [], recentActivities: [] }),
+    can('vendors', 'view') ? api.getVendors({}) : Promise.resolve([]),
+    can('expenses', 'view') ? api.getExpenseCategories() : Promise.resolve([]),
+    can('income', 'view') ? api.getIncomeCategories() : Promise.resolve([]),
+    can('expenses', 'view') ? api.getExpenses({ limit: 200 }) : Promise.resolve([]),
+    can('income', 'view') ? api.getIncome({ limit: 200 }) : Promise.resolve([]),
+    can('cashflow', 'view') ? api.getWallet() : Promise.resolve({ currentBalance: 0, lastUpdatedAt: '' }),
+    can('cashflow', 'view') ? api.getCashflowTransactions({ limit: 300 }) : Promise.resolve([]),
+    can('dashboard', 'view') ? api.getDashboardStats() : Promise.resolve({ totalProducts: 0, totalSales: 0, totalTransactions: 0, lowStock: [], recentClockIns: [], periods: {}, topSellingProducts: [], staffClockInSummary: [], debtors: [], totalInflow: 0, totalOutflow: 0, walletBalance: 0, recentActivities: [] }),
     can('company', 'view') ? api.getActiveCompany() : Promise.resolve({}),
     can('invoices', 'view') ? api.getInvoices({ limit: 100 }) : Promise.resolve([]),
     can('dashboard', 'view') ? api.getRecentClockIns({ limit: 300, allCompanies: Boolean(state.session?.user?.isAdmin) }) : Promise.resolve([]),
@@ -1308,12 +1471,12 @@ async function refreshData() {
   const emailSettings = can('settings', 'edit')
     ? await api.getEmailSettings()
     : { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
-  state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '' }; state.emailSettings = emailSettings || { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
+  state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.vendors = vendors; state.expenseCategories = expenseCategories; state.incomeCategories = incomeCategories; state.expenses = expenses; state.incomes = incomes; state.wallet = wallet || { currentBalance: 0, lastUpdatedAt: '' }; state.cashflowTransactions = transactions || []; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '' }; state.emailSettings = emailSettings || { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
   state.roles = can('roles', 'view') ? await api.getRoles() : [];
   state.users = can('users', 'view') ? await api.getUsers() : [];
   if (!state.invoiceDraft.invoiceNumber) await refreshInvoiceNumber();
   if (state.invoiceDraft.useDefaultTax) invoiceTaxPercent.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
-  renderLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); renderClockInGallery(state.clockIns); renderCompany(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); applyFormAccess();
+  renderLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderVendors(); renderExpenses(); renderIncome(); renderCashflow(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); renderClockInGallery(state.clockIns); renderCompany(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); applyFormAccess();
 }
 
 async function safeRefresh() {
@@ -1359,6 +1522,8 @@ function resetSimpleForms() {
   categoryForm.reset(); categoryIdField.value = '';
   supplierForm.reset(); supplierIdField.value = '';
   customerForm.reset(); customerIdField.value = '';
+  expenseForm?.reset();
+  incomeForm?.reset();
   userForm.reset(); userIdField.value = ''; userRoleId.value = ''; userIsActive.value = '1';
   roleForm.reset(); roleIdField.value = ''; roleCancelBtn.hidden = true; renderRolePermissionGrid();
 }
@@ -1531,6 +1696,88 @@ customerForm.addEventListener('submit', async (e) => {
 customersTableBody.addEventListener('click', async (e) => {
   const t = e.target; if (!(t instanceof HTMLButtonElement)) return; const row = state.customers.find((c) => c.id === Number(t.dataset.id)); if (!row) return;
   try { if (t.dataset.action === 'edit-customer') { customerIdField.value = String(row.id); customerName.value = row.name; customerPhone.value = row.phone || ''; customerEmail.value = row.email || ''; openFormPopup(formCardOf(customerForm), 'Customer Form'); } else if (t.dataset.action === 'delete-customer') { if (!window.confirm(`Delete customer "${row.name}"?`)) return; await api.deleteCustomer(row.id); await refreshData(); showStatus('Customer deleted.'); } } catch (err) { showStatus(err.message || 'Customer action failed.', 'error'); }
+});
+
+addVendorQuickBtn?.addEventListener('click', async () => {
+  try {
+    const name = String(expenseNewVendorName?.value || '').trim();
+    if (!name) throw new Error('Enter vendor name first.');
+    const created = await api.createVendor({ name, type: expenseNewVendorType?.value || 'supplier' });
+    expenseNewVendorName.value = '';
+    await refreshData();
+    if (expenseVendorId) expenseVendorId.value = String(created.id);
+    showStatus('Vendor created.');
+  } catch (err) {
+    showStatus(err.message || 'Unable to create vendor.', 'error');
+  }
+});
+
+addExpenseCategoryBtn?.addEventListener('click', async () => {
+  try {
+    const name = String(expenseCategoryName?.value || '').trim();
+    if (!name) throw new Error('Enter expense category name first.');
+    const created = await api.createExpenseCategory({ name });
+    expenseCategoryName.value = '';
+    await refreshData();
+    if (expenseCategoryId) expenseCategoryId.value = String(created.id);
+    showStatus('Expense category created.');
+  } catch (err) {
+    showStatus(err.message || 'Unable to create expense category.', 'error');
+  }
+});
+
+expenseForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const payload = {
+      vendorId: Number(expenseVendorId?.value || 0),
+      categoryId: Number(expenseCategoryId?.value || 0),
+      amount: Number(expenseAmount?.value || 0),
+      description: String(expenseDescription?.value || '').trim(),
+      createdAt: expenseDate?.value ? new Date(expenseDate.value).toISOString() : new Date().toISOString()
+    };
+    await api.createExpense(payload);
+    expenseForm.reset();
+    if (expenseDate) expenseDate.value = '';
+    await refreshData();
+    showStatus('Expense recorded.');
+  } catch (err) {
+    showStatus(err.message || 'Expense failed.', 'error');
+  }
+});
+
+addIncomeCategoryBtn?.addEventListener('click', async () => {
+  try {
+    const name = String(incomeCategoryName?.value || '').trim();
+    if (!name) throw new Error('Enter income category name first.');
+    const created = await api.createIncomeCategory({ name });
+    incomeCategoryName.value = '';
+    await refreshData();
+    if (incomeCategoryId) incomeCategoryId.value = String(created.id);
+    showStatus('Income category created.');
+  } catch (err) {
+    showStatus(err.message || 'Unable to create income category.', 'error');
+  }
+});
+
+incomeForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const payload = {
+      categoryId: Number(incomeCategoryId?.value || 0),
+      sourceName: String(incomeSourceName?.value || '').trim(),
+      amount: Number(incomeAmount?.value || 0),
+      description: String(incomeDescription?.value || '').trim(),
+      createdAt: incomeDate?.value ? new Date(incomeDate.value).toISOString() : new Date().toISOString()
+    };
+    await api.createIncome(payload);
+    incomeForm.reset();
+    if (incomeDate) incomeDate.value = '';
+    await refreshData();
+    showStatus('Additional inflow recorded.');
+  } catch (err) {
+    showStatus(err.message || 'Income failed.', 'error');
+  }
 });
 
 invoiceType.addEventListener('change', async () => {
@@ -1801,7 +2048,21 @@ restartInstallBtn?.addEventListener('click', async () => {
   }
 });
 
-generateReportBtn.addEventListener('click', async () => { try { renderReport(await api.getSalesReport({ period: reportPeriod.value, paymentStatus: reportPaymentStatus?.value || 'all' })); showStatus('Report generated.'); } catch (err) { showStatus(err.message || 'Report failed.', 'error'); } });
+generateReportBtn.addEventListener('click', async () => {
+  try {
+    const period = reportPeriod.value;
+    const [salesReport, expenseReport, incomeReport, cashflowReport] = await Promise.all([
+      api.getSalesReport({ period, paymentStatus: reportPaymentStatus?.value || 'all' }),
+      api.getExpenseReport({ period }),
+      api.getIncomeReport({ period }),
+      api.getCashflowReport({ period })
+    ]);
+    renderReport(salesReport, expenseReport, incomeReport, cashflowReport);
+    showStatus('Report generated.');
+  } catch (err) {
+    showStatus(err.message || 'Report failed.', 'error');
+  }
+});
 exportReportBtn.addEventListener('click', async () => { try { if (!state.report) throw new Error('Generate report first.'); const res = await api.exportSalesReportCsv(state.report); if (res.cancelled) return showStatus('CSV export cancelled.', 'warning'); showStatus(`Report exported: ${res.filePath}`); } catch (err) { showStatus(err.message || 'CSV export failed.', 'error'); } });
 
 companyCreateForm.addEventListener('submit', async (e) => { e.preventDefault(); try { const name = newCompanyName.value.trim(); if (!name) throw new Error('Company name is required.'); await api.createCompany({ name }); newCompanyName.value = ''; await safeRefresh(); showStatus('Company created.'); } catch (err) { showStatus(err.message || 'Unable to create company.', 'error'); } });

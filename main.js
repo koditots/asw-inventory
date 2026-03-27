@@ -1034,6 +1034,73 @@ function registerIpcHandlers() {
     return db.deleteSupplier(toPositiveInt(payload?.id, 'Supplier ID'), getActiveCompanyId());
   });
 
+  ipcMain.handle('wallet:get', async () => {
+    requireClockIn();
+    requirePermission('cashflow', 'view');
+    return db.getCompanyWallet(getActiveCompanyId());
+  });
+
+  ipcMain.handle('vendors:getAll', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('vendors', 'view');
+    return db.getVendors(getActiveCompanyId(), payload || {});
+  });
+  ipcMain.handle('vendors:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('vendors', 'create');
+    return db.createVendor(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+  });
+
+  ipcMain.handle('expenses:categories:getAll', async () => {
+    requireClockIn();
+    requirePermission('expenses', 'view');
+    return db.getExpenseCategories(getActiveCompanyId());
+  });
+  ipcMain.handle('expenses:categories:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('expenses', 'edit');
+    if (!activeSession?.user?.isAdmin) throw new Error('Only admin can create expense categories.');
+    return db.createExpenseCategory(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+  });
+  ipcMain.handle('expenses:getAll', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('expenses', 'view');
+    return db.getExpenses(getActiveCompanyId(), payload || {});
+  });
+  ipcMain.handle('expenses:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('expenses', 'create');
+    return db.createExpense(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+  });
+
+  ipcMain.handle('income:categories:getAll', async () => {
+    requireClockIn();
+    requirePermission('income', 'view');
+    return db.getIncomeCategories(getActiveCompanyId());
+  });
+  ipcMain.handle('income:categories:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('income', 'edit');
+    if (!activeSession?.user?.isAdmin) throw new Error('Only admin can create income categories.');
+    return db.createIncomeCategory(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+  });
+  ipcMain.handle('income:getAll', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('income', 'view');
+    return db.getAdditionalIncome(getActiveCompanyId(), payload || {});
+  });
+  ipcMain.handle('income:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('income', 'create');
+    return db.createAdditionalIncome(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+  });
+
+  ipcMain.handle('cashflow:transactions:getAll', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('cashflow', 'view');
+    return db.getTransactionLedger(getActiveCompanyId(), payload || {});
+  });
+
   ipcMain.handle('customers:create', async (_event, payload) => {
     requireClockIn();
     requirePermission('customers', 'create');
@@ -1241,6 +1308,21 @@ function registerIpcHandlers() {
     requireClockIn();
     requirePermission('reports', 'view');
     return db.getInventoryReport(getActiveCompanyId());
+  });
+  ipcMain.handle('reports:getExpenses', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('reports', 'view');
+    return db.getExpenseReport(getActiveCompanyId(), payload?.period || 'monthly');
+  });
+  ipcMain.handle('reports:getIncome', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('reports', 'view');
+    return db.getIncomeReport(getActiveCompanyId(), payload?.period || 'monthly');
+  });
+  ipcMain.handle('reports:getCashflow', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('reports', 'view');
+    return db.getCashflowReport(getActiveCompanyId(), payload?.period || 'monthly');
   });
   ipcMain.handle('reports:getProfitLoss', async (_event, payload) => {
     requireClockIn();

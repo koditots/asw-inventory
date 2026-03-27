@@ -29,7 +29,7 @@ const parseJsonObject = (v, fallback = {}) => {
   }
 };
 
-const PERMISSION_MODULES = ['dashboard', 'products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'reports', 'company', 'users', 'roles', 'settings'];
+const PERMISSION_MODULES = ['dashboard', 'products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'reports', 'company', 'users', 'roles', 'settings', 'expenses', 'vendors', 'income', 'cashflow'];
 const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'print'];
 
 function fullPermissions() {
@@ -277,6 +277,81 @@ async function migrate() {
     note TEXT DEFAULT ''
   )`);
 
+  await run(`CREATE TABLE IF NOT EXISTS company_wallet (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL UNIQUE,
+    current_balance REAL NOT NULL DEFAULT 0,
+    last_updated_at TEXT NOT NULL DEFAULT ''
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS expense_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL,
+    UNIQUE(company_id, name)
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS vendors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'supplier',
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    address TEXT DEFAULT '',
+    created_by INTEGER,
+    created_at TEXT NOT NULL,
+    UNIQUE(company_id, name)
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 1,
+    vendor_id INTEGER NOT NULL,
+    category_id INTEGER NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    amount REAL NOT NULL CHECK(amount > 0),
+    created_by INTEGER,
+    created_at TEXT NOT NULL
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_expenses_company_date ON expenses(company_id, created_at DESC)');
+
+  await run(`CREATE TABLE IF NOT EXISTS income_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL,
+    UNIQUE(company_id, name)
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS additional_income (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 1,
+    category_id INTEGER NOT NULL,
+    source_name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    amount REAL NOT NULL CHECK(amount > 0),
+    created_by INTEGER,
+    created_at TEXT NOT NULL
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_additional_income_company_date ON additional_income(company_id, created_at DESC)');
+
+  await run(`CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 1,
+    type TEXT NOT NULL,
+    reference_id INTEGER,
+    amount REAL NOT NULL CHECK(amount >= 0),
+    direction TEXT NOT NULL,
+    balance_after REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    created_by INTEGER
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_transactions_company_date ON transactions(company_id, created_at DESC)');
+
   await run(`CREATE TABLE IF NOT EXISTS receipts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id INTEGER NOT NULL,
@@ -436,6 +511,20 @@ async function migrate() {
          AND COALESCE(ph.created_at, '') = COALESCE(NULLIF(ip.created_at, ''), ip.payment_date)
      )`
   );
+  await run(
+    `INSERT INTO transactions (company_id, type, reference_id, amount, direction, balance_after, created_at, created_by)
+     SELECT ph.company_id, 'invoice_payment', ph.invoice_id, ph.amount, 'in', 0, ph.created_at, ph.added_by
+     FROM payment_history ph
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM transactions t
+       WHERE t.company_id = ph.company_id
+         AND t.type = 'invoice_payment'
+         AND COALESCE(t.reference_id, -1) = ph.invoice_id
+         AND ABS(t.amount - ph.amount) < 0.0001
+         AND COALESCE(t.created_at, '') = COALESCE(ph.created_at, '')
+     )`
+  );
 
   // Keep invoice payment fields synced for existing records.
   await run(
@@ -519,7 +608,47 @@ async function migrate() {
        VALUES (?, 0, '', ?, ?)`,
       [c.id, new Date().toISOString(), new Date().toISOString()]
     );
+    await run(
+      `INSERT OR IGNORE INTO company_wallet (company_id, current_balance, last_updated_at)
+       VALUES (?, 0, ?)`,
+      [c.id, new Date().toISOString()]
+    );
+    await run(
+      `INSERT OR IGNORE INTO expense_categories (company_id, name, created_by, created_at)
+       VALUES (?, ?, NULL, ?)`,
+      [c.id, 'Purchased Goods', new Date().toISOString()]
+    );
+    await run(
+      `INSERT OR IGNORE INTO expense_categories (company_id, name, created_by, created_at)
+       VALUES (?, ?, NULL, ?)`,
+      [c.id, 'Service Expense', new Date().toISOString()]
+    );
+    await run(
+      `INSERT OR IGNORE INTO income_categories (company_id, name, created_by, created_at)
+       VALUES (?, ?, NULL, ?)`,
+      [c.id, 'Investment', new Date().toISOString()]
+    );
+    await run(
+      `INSERT OR IGNORE INTO income_categories (company_id, name, created_by, created_at)
+       VALUES (?, ?, NULL, ?)`,
+      [c.id, 'Loan', new Date().toISOString()]
+    );
+    await run(
+      `INSERT OR IGNORE INTO income_categories (company_id, name, created_by, created_at)
+       VALUES (?, ?, NULL, ?)`,
+      [c.id, 'Misc Income', new Date().toISOString()]
+    );
   }
+  await run(
+    `UPDATE company_wallet
+     SET current_balance = ROUND(
+       COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.company_id = company_wallet.company_id AND t.direction = 'in'), 0)
+       - COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.company_id = company_wallet.company_id AND t.direction = 'out'), 0),
+       2
+     ),
+     last_updated_at = ?`,
+    [new Date().toISOString()]
+  );
   await run("UPDATE settings SET created_at = ? WHERE created_at IS NULL OR TRIM(created_at) = ''", [new Date().toISOString()]);
   await run("UPDATE settings SET updated_at = ? WHERE updated_at IS NULL OR TRIM(updated_at) = ''", [new Date().toISOString()]);
   await run('UPDATE users SET is_active = 1 WHERE is_active IS NULL');
@@ -645,6 +774,36 @@ async function createCompany(payload) {
     `INSERT OR IGNORE INTO settings (company_id, default_tax_rate, terms_conditions, created_at, updated_at)
      VALUES (?, 0, '', ?, ?)`,
     [result.id, stamp, stamp]
+  );
+  await run(
+    `INSERT OR IGNORE INTO company_wallet (company_id, current_balance, last_updated_at)
+     VALUES (?, 0, ?)`,
+    [result.id, stamp]
+  );
+  await run(
+    `INSERT OR IGNORE INTO expense_categories (company_id, name, created_by, created_at)
+     VALUES (?, ?, NULL, ?)`,
+    [result.id, 'Purchased Goods', stamp]
+  );
+  await run(
+    `INSERT OR IGNORE INTO expense_categories (company_id, name, created_by, created_at)
+     VALUES (?, ?, NULL, ?)`,
+    [result.id, 'Service Expense', stamp]
+  );
+  await run(
+    `INSERT OR IGNORE INTO income_categories (company_id, name, created_by, created_at)
+     VALUES (?, ?, NULL, ?)`,
+    [result.id, 'Investment', stamp]
+  );
+  await run(
+    `INSERT OR IGNORE INTO income_categories (company_id, name, created_by, created_at)
+     VALUES (?, ?, NULL, ?)`,
+    [result.id, 'Loan', stamp]
+  );
+  await run(
+    `INSERT OR IGNORE INTO income_categories (company_id, name, created_by, created_at)
+     VALUES (?, ?, NULL, ?)`,
+    [result.id, 'Misc Income', stamp]
   );
   return getCompanyById(result.id);
 }
@@ -1120,6 +1279,7 @@ async function recordSale(payload, companyId) {
 
 async function getDashboardStats(companyId, userId = null) {
   const cid = toInt(companyId, -1);
+  const wallet = await getCompanyWallet(cid);
   const totalProductsRow = await get('SELECT COUNT(*) AS totalProducts FROM products WHERE company_id = ?', [cid]);
   const lowStock = await all(
     `SELECT id, name, quantity, COALESCE(min_stock, 5) AS minStock
@@ -1175,6 +1335,14 @@ async function getDashboardStats(companyId, userId = null) {
     [cid]
   );
   const recentActivities = await getRecentActivities(cid, 20);
+  const flowTotals = await get(
+    `SELECT
+       COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END), 0) AS totalInflow,
+       COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) AS totalOutflow
+     FROM transactions
+     WHERE company_id = ?`,
+    [cid]
+  );
   return {
     totalProducts: totalProductsRow?.totalProducts || 0,
     lowStock,
@@ -1187,6 +1355,9 @@ async function getDashboardStats(companyId, userId = null) {
       monthly: { totalSales: Number(monthly?.totalSales || 0), revenue: Number(monthly?.revenue || 0) }
     },
     topSellingProducts,
+    totalInflow: Number(flowTotals?.totalInflow || 0),
+    totalOutflow: Number(flowTotals?.totalOutflow || 0),
+    walletBalance: Number(wallet?.currentBalance || 0),
     debtors: debtors.map((d) => ({
       invoiceId: d.invoiceId,
       invoiceNumber: d.invoiceNumber,
@@ -1209,6 +1380,47 @@ function buildReportRange(period) {
   else if (period === 'weekly') { start.setDate(now.getDate() - 6); start.setHours(0, 0, 0, 0); }
   else { start.setDate(now.getDate() - 29); start.setHours(0, 0, 0, 0); }
   return { startIso: start.toISOString(), endIso: now.toISOString() };
+}
+
+async function ensureWallet(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  await run(
+    `INSERT OR IGNORE INTO company_wallet (company_id, current_balance, last_updated_at)
+     VALUES (?, 0, ?)`,
+    [cid, new Date().toISOString()]
+  );
+  return getCompanyWallet(cid);
+}
+
+async function getCompanyWallet(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  const row = await get('SELECT id, company_id AS companyId, current_balance AS currentBalance, last_updated_at AS lastUpdatedAt FROM company_wallet WHERE company_id = ?', [cid]);
+  if (row) return { ...row, currentBalance: Number(row.currentBalance || 0), lastUpdatedAt: row.lastUpdatedAt || '' };
+  await ensureWallet(cid);
+  const created = await get('SELECT id, company_id AS companyId, current_balance AS currentBalance, last_updated_at AS lastUpdatedAt FROM company_wallet WHERE company_id = ?', [cid]);
+  return { ...created, currentBalance: Number(created?.currentBalance || 0), lastUpdatedAt: created?.lastUpdatedAt || '' };
+}
+
+async function appendTransaction({ companyId, type, referenceId = null, amount = 0, direction = 'in', createdBy = null, createdAt = null }) {
+  const cid = toInt(companyId, -1);
+  const amt = Number(amount || 0);
+  const stamp = createdAt ? new Date(createdAt) : new Date();
+  if (cid <= 0 || !Number.isFinite(amt) || amt < 0) throw new Error('Transaction data is invalid.');
+  if (Number.isNaN(stamp.getTime())) throw new Error('Transaction date is invalid.');
+  await ensureWallet(cid);
+  const wallet = await get('SELECT current_balance AS currentBalance FROM company_wallet WHERE company_id = ?', [cid]);
+  const before = Number(wallet?.currentBalance || 0);
+  const delta = direction === 'out' ? -Math.abs(amt) : Math.abs(amt);
+  const after = Number((before + delta).toFixed(2));
+  await run(
+    `INSERT INTO transactions (company_id, type, reference_id, amount, direction, balance_after, created_at, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [cid, String(type || '').trim(), toInt(referenceId, null), Math.abs(amt), direction === 'out' ? 'out' : 'in', after, stamp.toISOString(), toInt(createdBy, null)]
+  );
+  await run('UPDATE company_wallet SET current_balance = ?, last_updated_at = ? WHERE company_id = ?', [after, stamp.toISOString(), cid]);
+  return { currentBalance: after };
 }
 
 async function getSalesReport(period = 'daily', companyId, paymentStatus = 'all') {
@@ -1431,13 +1643,22 @@ async function recordInvoicePayment(payload, companyId, userId = null) {
      VALUES (?, ?, ?, ?, ?, ?)`,
     [cid, invoiceId, amount, toInt(userId, null), createdAt, note]
   );
+  const walletUpdate = await appendTransaction({
+    companyId: cid,
+    type: 'invoice_payment',
+    referenceId: invoiceId,
+    amount,
+    direction: 'in',
+    createdBy: toInt(userId, null),
+    createdAt
+  });
   const documentStatus = paymentStatus === 'paid' ? 'paid' : (paymentStatus === 'partial' ? 'partially_paid' : 'pending');
   await run(
     'UPDATE invoices SET amount_paid = ?, balance = ?, payment_status = ?, status = ?, last_payment_by = ?, last_payment_at = ? WHERE id = ? AND company_id = ?',
     [nextPaid, balance, paymentStatus, documentStatus, toInt(userId, null), createdAt, invoiceId, cid]
   );
   await logAudit({ companyId: cid, userId, action: 'payment', module: 'invoices', entityId: invoiceId, metadata: { amount, status: paymentStatus, balance } });
-  return { id: res.id, invoiceId, amount, status: paymentStatus, amountPaid: nextPaid, balance, paymentDate: createdAt };
+  return { id: res.id, invoiceId, amount, status: paymentStatus, amountPaid: nextPaid, balance, paymentDate: createdAt, currentBalance: walletUpdate.currentBalance };
 }
 
 async function getFinancialSummary(companyId, period = 'daily') {
@@ -1451,6 +1672,15 @@ async function getFinancialSummary(companyId, period = 'daily') {
      WHERE s.company_id = ? AND s.date BETWEEN ? AND ?`,
     [cid, range.startIso, range.endIso]
   );
+  const cashflowTotals = await get(
+    `SELECT
+       COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END), 0) AS totalInflow,
+       COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) AS totalOutflow
+     FROM transactions
+     WHERE company_id = ? AND created_at BETWEEN ? AND ?`,
+    [cid, range.startIso, range.endIso]
+  );
+  const wallet = await getCompanyWallet(cid);
   return {
     period,
     startDate: range.startIso,
@@ -1458,7 +1688,304 @@ async function getFinancialSummary(companyId, period = 'daily') {
     revenue: Number(revenue?.value || 0),
     paymentsReceived: Number(paid?.value || 0),
     cogs: Number(cogs?.value || 0),
-    profit: Number((Number(revenue?.value || 0) - Number(cogs?.value || 0)).toFixed(2))
+    profit: Number((Number(revenue?.value || 0) - Number(cogs?.value || 0)).toFixed(2)),
+    totalInflow: Number(cashflowTotals?.totalInflow || 0),
+    totalOutflow: Number(cashflowTotals?.totalOutflow || 0),
+    walletBalance: Number(wallet?.currentBalance || 0)
+  };
+}
+
+function normalizeVendorType(type) {
+  const value = String(type || 'supplier').trim().toLowerCase();
+  return ['supplier', 'service_provider', 'both'].includes(value) ? value : 'supplier';
+}
+
+async function getExpenseCategories(companyId) {
+  const cid = toInt(companyId, -1);
+  return all(
+    `SELECT ec.id, ec.name, ec.created_by AS createdBy, ec.created_at AS createdAt, u.username AS createdByName
+     FROM expense_categories ec
+     LEFT JOIN users u ON u.id = ec.created_by
+     WHERE ec.company_id = ?
+     ORDER BY ec.name ASC`,
+    [cid]
+  );
+}
+
+async function createExpenseCategory(payload, companyId, userId = null) {
+  const cid = toInt(companyId, -1);
+  const name = String(payload?.name || '').trim();
+  if (cid <= 0 || !name) throw new Error('Expense category name is required.');
+  const stamp = new Date().toISOString();
+  const res = await run(
+    'INSERT INTO expense_categories (company_id, name, created_by, created_at) VALUES (?, ?, ?, ?)',
+    [cid, name, toInt(userId, null), stamp]
+  );
+  await logAudit({ companyId: cid, userId, action: 'create', module: 'expenses', entityId: res.id, metadata: { name } });
+  return get('SELECT id, name, created_by AS createdBy, created_at AS createdAt FROM expense_categories WHERE id = ? AND company_id = ?', [res.id, cid]);
+}
+
+async function getIncomeCategories(companyId) {
+  const cid = toInt(companyId, -1);
+  return all(
+    `SELECT ic.id, ic.name, ic.created_by AS createdBy, ic.created_at AS createdAt, u.username AS createdByName
+     FROM income_categories ic
+     LEFT JOIN users u ON u.id = ic.created_by
+     WHERE ic.company_id = ?
+     ORDER BY ic.name ASC`,
+    [cid]
+  );
+}
+
+async function createIncomeCategory(payload, companyId, userId = null) {
+  const cid = toInt(companyId, -1);
+  const name = String(payload?.name || '').trim();
+  if (cid <= 0 || !name) throw new Error('Income category name is required.');
+  const stamp = new Date().toISOString();
+  const res = await run(
+    'INSERT INTO income_categories (company_id, name, created_by, created_at) VALUES (?, ?, ?, ?)',
+    [cid, name, toInt(userId, null), stamp]
+  );
+  await logAudit({ companyId: cid, userId, action: 'create', module: 'income', entityId: res.id, metadata: { name } });
+  return get('SELECT id, name, created_by AS createdBy, created_at AS createdAt FROM income_categories WHERE id = ? AND company_id = ?', [res.id, cid]);
+}
+
+async function createVendor(payload, companyId, userId = null) {
+  const cid = toInt(companyId, -1);
+  const name = String(payload?.name || '').trim();
+  const type = normalizeVendorType(payload?.type);
+  const phone = String(payload?.phone || '').trim();
+  const email = String(payload?.email || '').trim();
+  const address = String(payload?.address || '').trim();
+  if (cid <= 0 || !name) throw new Error('Vendor name is required.');
+  if (email && !isEmail(email)) throw new Error('Please provide a valid vendor email.');
+  const stamp = new Date().toISOString();
+  const res = await run(
+    `INSERT INTO vendors (company_id, name, type, phone, email, address, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [cid, name, type, phone, email, address, toInt(userId, null), stamp]
+  );
+  await logAudit({ companyId: cid, userId, action: 'create', module: 'vendors', entityId: res.id, metadata: { name, type } });
+  return get('SELECT id, name, type, phone, email, address, created_at AS createdAt FROM vendors WHERE id = ? AND company_id = ?', [res.id, cid]);
+}
+
+async function getVendors(companyId, payload = {}) {
+  const cid = toInt(companyId, -1);
+  const type = payload?.type ? normalizeVendorType(payload.type) : null;
+  const rows = type
+    ? await all(
+      `SELECT v.id, v.name, v.type, v.phone, v.email, v.address, v.created_by AS createdBy, v.created_at AS createdAt, u.username AS createdByName
+       FROM vendors v
+       LEFT JOIN users u ON u.id = v.created_by
+       WHERE v.company_id = ?
+         AND (v.type = ? OR v.type = 'both')
+       ORDER BY v.name ASC`,
+      [cid, type]
+    )
+    : await all(
+      `SELECT v.id, v.name, v.type, v.phone, v.email, v.address, v.created_by AS createdBy, v.created_at AS createdAt, u.username AS createdByName
+       FROM vendors v
+       LEFT JOIN users u ON u.id = v.created_by
+       WHERE v.company_id = ?
+       ORDER BY v.name ASC`,
+      [cid]
+    );
+  return rows;
+}
+
+async function createExpense(payload, companyId, userId = null) {
+  const cid = toInt(companyId, -1);
+  const vendorId = toInt(payload?.vendorId, -1);
+  const categoryId = toInt(payload?.categoryId, -1);
+  const description = String(payload?.description || '').trim();
+  const amount = Number(payload?.amount || 0);
+  const createdAt = payload?.createdAt ? new Date(payload.createdAt) : new Date();
+  if (cid <= 0 || vendorId <= 0 || categoryId <= 0 || !Number.isFinite(amount) || amount <= 0) throw new Error('Expense data is invalid.');
+  if (Number.isNaN(createdAt.getTime())) throw new Error('Expense date is invalid.');
+  const vendor = await get('SELECT id FROM vendors WHERE id = ? AND company_id = ?', [vendorId, cid]);
+  if (!vendor) throw new Error('Selected vendor was not found.');
+  const category = await get('SELECT id FROM expense_categories WHERE id = ? AND company_id = ?', [categoryId, cid]);
+  if (!category) throw new Error('Selected expense category was not found.');
+  await run('BEGIN TRANSACTION');
+  try {
+    const res = await run(
+      `INSERT INTO expenses (company_id, vendor_id, category_id, description, amount, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [cid, vendorId, categoryId, description, amount, toInt(userId, null), createdAt.toISOString()]
+    );
+    const wallet = await appendTransaction({
+      companyId: cid,
+      type: 'expense',
+      referenceId: res.id,
+      amount,
+      direction: 'out',
+      createdBy: toInt(userId, null),
+      createdAt: createdAt.toISOString()
+    });
+    await logAudit({ companyId: cid, userId, action: 'create', module: 'expenses', entityId: res.id, metadata: { vendorId, categoryId, amount, currentBalance: wallet.currentBalance } });
+    await run('COMMIT');
+    return { id: res.id, vendorId, categoryId, amount: Number(amount.toFixed(2)), description, createdAt: createdAt.toISOString(), currentBalance: wallet.currentBalance };
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function getExpenses(companyId, payload = {}) {
+  const cid = toInt(companyId, -1);
+  const limit = Math.max(1, Math.min(500, toInt(payload.limit, 100)));
+  return all(
+    `SELECT e.id, e.vendor_id AS vendorId, v.name AS vendorName, v.type AS vendorType,
+            e.category_id AS categoryId, ec.name AS categoryName, e.description, e.amount,
+            e.created_by AS createdBy, u.username AS createdByName, e.created_at AS createdAt
+     FROM expenses e
+     INNER JOIN vendors v ON v.id = e.vendor_id
+     INNER JOIN expense_categories ec ON ec.id = e.category_id
+     LEFT JOIN users u ON u.id = e.created_by
+     WHERE e.company_id = ?
+     ORDER BY e.created_at DESC, e.id DESC
+     LIMIT ?`,
+    [cid, limit]
+  ).then((rows) => rows.map((r) => ({ ...r, amount: Number(r.amount || 0) })));
+}
+
+async function createAdditionalIncome(payload, companyId, userId = null) {
+  const cid = toInt(companyId, -1);
+  const categoryId = toInt(payload?.categoryId, -1);
+  const sourceName = String(payload?.sourceName || '').trim();
+  const description = String(payload?.description || '').trim();
+  const amount = Number(payload?.amount || 0);
+  const createdAt = payload?.createdAt ? new Date(payload.createdAt) : new Date();
+  if (cid <= 0 || categoryId <= 0 || !sourceName || !Number.isFinite(amount) || amount <= 0) throw new Error('Additional income data is invalid.');
+  if (Number.isNaN(createdAt.getTime())) throw new Error('Income date is invalid.');
+  const category = await get('SELECT id FROM income_categories WHERE id = ? AND company_id = ?', [categoryId, cid]);
+  if (!category) throw new Error('Selected income category was not found.');
+  await run('BEGIN TRANSACTION');
+  try {
+    const res = await run(
+      `INSERT INTO additional_income (company_id, category_id, source_name, description, amount, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [cid, categoryId, sourceName, description, amount, toInt(userId, null), createdAt.toISOString()]
+    );
+    const wallet = await appendTransaction({
+      companyId: cid,
+      type: 'income',
+      referenceId: res.id,
+      amount,
+      direction: 'in',
+      createdBy: toInt(userId, null),
+      createdAt: createdAt.toISOString()
+    });
+    await logAudit({ companyId: cid, userId, action: 'create', module: 'income', entityId: res.id, metadata: { categoryId, sourceName, amount, currentBalance: wallet.currentBalance } });
+    await run('COMMIT');
+    return { id: res.id, categoryId, sourceName, description, amount: Number(amount.toFixed(2)), createdAt: createdAt.toISOString(), currentBalance: wallet.currentBalance };
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function getAdditionalIncome(companyId, payload = {}) {
+  const cid = toInt(companyId, -1);
+  const limit = Math.max(1, Math.min(500, toInt(payload.limit, 100)));
+  return all(
+    `SELECT ai.id, ai.category_id AS categoryId, ic.name AS categoryName, ai.source_name AS sourceName, ai.description, ai.amount,
+            ai.created_by AS createdBy, u.username AS createdByName, ai.created_at AS createdAt
+     FROM additional_income ai
+     INNER JOIN income_categories ic ON ic.id = ai.category_id
+     LEFT JOIN users u ON u.id = ai.created_by
+     WHERE ai.company_id = ?
+     ORDER BY ai.created_at DESC, ai.id DESC
+     LIMIT ?`,
+    [cid, limit]
+  ).then((rows) => rows.map((r) => ({ ...r, amount: Number(r.amount || 0) })));
+}
+
+async function getTransactionLedger(companyId, payload = {}) {
+  const cid = toInt(companyId, -1);
+  const limit = Math.max(1, Math.min(1000, toInt(payload.limit, 200)));
+  return all(
+    `SELECT t.id, t.type, t.reference_id AS referenceId, t.amount, t.direction, t.balance_after AS balanceAfter, t.created_at AS createdAt, t.created_by AS createdBy, u.username AS createdByName
+     FROM transactions t
+     LEFT JOIN users u ON u.id = t.created_by
+     WHERE t.company_id = ?
+     ORDER BY t.created_at DESC, t.id DESC
+     LIMIT ?`,
+    [cid, limit]
+  ).then((rows) => rows.map((r) => ({ ...r, amount: Number(r.amount || 0), balanceAfter: Number(r.balanceAfter || 0) })));
+}
+
+async function getExpenseReport(companyId, period = 'monthly') {
+  const cid = toInt(companyId, -1);
+  const range = buildReportRange(period);
+  const summaryRow = await get(
+    `SELECT COALESCE(SUM(amount), 0) AS total
+     FROM expenses
+     WHERE company_id = ? AND created_at BETWEEN ? AND ?`,
+    [cid, range.startIso, range.endIso]
+  );
+  const byCategory = await all(
+    `SELECT ec.name AS categoryName, COALESCE(SUM(e.amount), 0) AS total
+     FROM expenses e
+     INNER JOIN expense_categories ec ON ec.id = e.category_id
+     WHERE e.company_id = ? AND e.created_at BETWEEN ? AND ?
+     GROUP BY ec.id, ec.name
+     ORDER BY total DESC`,
+    [cid, range.startIso, range.endIso]
+  );
+  const byVendor = await all(
+    `SELECT v.name AS vendorName, COALESCE(SUM(e.amount), 0) AS total
+     FROM expenses e
+     INNER JOIN vendors v ON v.id = e.vendor_id
+     WHERE e.company_id = ? AND e.created_at BETWEEN ? AND ?
+     GROUP BY v.id, v.name
+     ORDER BY total DESC`,
+    [cid, range.startIso, range.endIso]
+  );
+  return { period, startDate: range.startIso, endDate: range.endIso, totalExpenses: Number(summaryRow?.total || 0), byCategory, byVendor };
+}
+
+async function getIncomeReport(companyId, period = 'monthly') {
+  const cid = toInt(companyId, -1);
+  const range = buildReportRange(period);
+  const summaryRow = await get(
+    `SELECT COALESCE(SUM(amount), 0) AS total
+     FROM additional_income
+     WHERE company_id = ? AND created_at BETWEEN ? AND ?`,
+    [cid, range.startIso, range.endIso]
+  );
+  const byCategory = await all(
+    `SELECT ic.name AS categoryName, COALESCE(SUM(ai.amount), 0) AS total
+     FROM additional_income ai
+     INNER JOIN income_categories ic ON ic.id = ai.category_id
+     WHERE ai.company_id = ? AND ai.created_at BETWEEN ? AND ?
+     GROUP BY ic.id, ic.name
+     ORDER BY total DESC`,
+    [cid, range.startIso, range.endIso]
+  );
+  return { period, startDate: range.startIso, endDate: range.endIso, totalIncome: Number(summaryRow?.total || 0), byCategory };
+}
+
+async function getCashflowReport(companyId, period = 'monthly') {
+  const cid = toInt(companyId, -1);
+  const range = buildReportRange(period);
+  const totals = await get(
+    `SELECT
+       COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END), 0) AS totalInflow,
+       COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) AS totalOutflow
+     FROM transactions
+     WHERE company_id = ? AND created_at BETWEEN ? AND ?`,
+    [cid, range.startIso, range.endIso]
+  );
+  const wallet = await getCompanyWallet(cid);
+  return {
+    period,
+    startDate: range.startIso,
+    endDate: range.endIso,
+    totalInflow: Number(totals?.totalInflow || 0),
+    totalOutflow: Number(totals?.totalOutflow || 0),
+    net: Number((Number(totals?.totalInflow || 0) - Number(totals?.totalOutflow || 0)).toFixed(2)),
+    currentBalance: Number(wallet?.currentBalance || 0)
   };
 }
 
@@ -1840,6 +2367,15 @@ async function createInvoice(payload, companyId, createdBy = null) {
        VALUES (?, ?, ?, ?, ?, ?)`,
       [cid, res.id, amountPaid, toInt(createdBy, null), createdAt, 'Initial payment']
     );
+    await appendTransaction({
+      companyId: cid,
+      type: 'invoice_payment',
+      referenceId: res.id,
+      amount: amountPaid,
+      direction: 'in',
+      createdBy: toInt(createdBy, null),
+      createdAt
+    });
   }
   await logAudit({
     companyId: cid,
@@ -1934,10 +2470,10 @@ function buildEffectivePermissions(user) {
   const hasAny = Object.values(rolePerms).some((m) => Object.values(m).some(Boolean));
   if (hasAny) return rolePerms;
   const fallback = normalizePermissions({});
-  ['dashboard', 'products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'reports', 'company'].forEach((m) => {
+  ['dashboard', 'products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'reports', 'company', 'expenses', 'vendors', 'income', 'cashflow'].forEach((m) => {
     fallback[m].view = true;
   });
-  ['products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'company'].forEach((m) => {
+  ['products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'company', 'expenses', 'vendors', 'income', 'cashflow'].forEach((m) => {
     fallback[m].create = true;
     fallback[m].edit = true;
   });
@@ -2275,6 +2811,21 @@ module.exports = {
   getProfitLossSummary,
   getStaffPerformanceReport,
   getFinancialSummary,
+  getCompanyWallet,
+  getExpenseCategories,
+  createExpenseCategory,
+  getIncomeCategories,
+  createIncomeCategory,
+  createVendor,
+  getVendors,
+  createExpense,
+  getExpenses,
+  createAdditionalIncome,
+  getAdditionalIncome,
+  getTransactionLedger,
+  getExpenseReport,
+  getIncomeReport,
+  getCashflowReport,
   getStockMovements,
   adjustStock,
   getCustomerInsights,

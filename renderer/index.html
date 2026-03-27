@@ -25,6 +25,10 @@
         <button class="nav-link" data-section="suppliers"><span class="nav-icon" data-icon="suppliers"></span><span>Suppliers</span></button>
         <button class="nav-link" data-section="customers"><span class="nav-icon" data-icon="customers"></span><span>Customers</span></button>
         <button class="nav-link" data-section="invoices"><span class="nav-icon" data-icon="invoices"></span><span>Invoices</span></button>
+        <button class="nav-link" data-section="expenses"><span class="nav-icon" data-icon="reports"></span><span>Expenses</span></button>
+        <button class="nav-link" data-section="vendors"><span class="nav-icon" data-icon="suppliers"></span><span>Vendors</span></button>
+        <button class="nav-link" data-section="income"><span class="nav-icon" data-icon="company"></span><span>Income</span></button>
+        <button class="nav-link" data-section="cashflow"><span class="nav-icon" data-icon="dashboard"></span><span>Cashflow</span></button>
         <button class="nav-link" data-section="clockin"><span class="nav-icon" data-icon="clockin"></span><span>Clock-In</span></button>
         <button class="nav-link" data-section="reports"><span class="nav-icon" data-icon="reports"></span><span>Sales Reports</span></button>
         <button class="nav-link" data-section="company"><span class="nav-icon" data-icon="company"></span><span>Company Setup</span></button>
@@ -130,6 +134,11 @@
           <div class="col-lg-4"><article class="metric-card"><p>Daily Revenue</p><h3 id="dailyRevenue">$0.00</h3></article></div>
           <div class="col-lg-4"><article class="metric-card"><p>Weekly Revenue</p><h3 id="weeklyRevenue">$0.00</h3></article></div>
           <div class="col-lg-4"><article class="metric-card"><p>Monthly Revenue</p><h3 id="monthlyRevenue">$0.00</h3></article></div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-lg-4"><article class="metric-card"><p>Company Balance</p><h3 id="walletBalance">$0.00</h3><small id="walletStatusText">Positive</small></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Total Inflow</p><h3 id="walletInflow">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Total Outflow</p><h3 id="walletOutflow">$0.00</h3></article></div>
         </div>
 
         <article class="panel-card">
@@ -646,6 +655,146 @@
         </article>
       </section>
 
+      <section id="section-expenses" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-5">
+            <article class="panel-card">
+              <div class="panel-title">Add Expense</div>
+              <form id="expenseForm" class="row g-2" novalidate>
+                <div class="col-12">
+                  <label class="form-label" for="expenseVendorId">Vendor</label>
+                  <select id="expenseVendorId" class="form-select" required></select>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                  <input id="expenseNewVendorName" class="form-control" type="text" placeholder="New vendor name" />
+                  <select id="expenseNewVendorType" class="form-select">
+                    <option value="supplier">Supplier</option>
+                    <option value="service_provider">Service Provider</option>
+                    <option value="both">Both</option>
+                  </select>
+                  <button id="addVendorQuickBtn" type="button" class="btn btn-outline-secondary">Add Vendor</button>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="expenseCategoryId">Expense Category</label>
+                  <select id="expenseCategoryId" class="form-select" required></select>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                  <input id="expenseCategoryName" class="form-control" type="text" placeholder="New category (Admin only)" />
+                  <button id="addExpenseCategoryBtn" type="button" class="btn btn-outline-secondary">Add Category</button>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="expenseAmount">Amount</label>
+                  <input id="expenseAmount" type="number" min="0.01" step="0.01" class="form-control" required />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="expenseDate">Date</label>
+                  <input id="expenseDate" type="datetime-local" class="form-control" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="expenseDescription">Description</label>
+                  <input id="expenseDescription" class="form-control" type="text" maxlength="200" />
+                </div>
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-dark w-100">Record Expense</button>
+                </div>
+              </form>
+            </article>
+          </div>
+          <div class="col-lg-7">
+            <article class="panel-card">
+              <div class="panel-title">Recent Expenses</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Amount</th><th>Created By</th></tr></thead>
+                  <tbody id="expensesTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-vendors" class="app-section">
+        <article class="panel-card">
+          <div class="panel-title">Vendors</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th>Address</th><th>Created By</th></tr></thead>
+              <tbody id="vendorsTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="section-income" class="app-section">
+        <div class="row g-3">
+          <div class="col-lg-5">
+            <article class="panel-card">
+              <div class="panel-title">Add Additional Inflow</div>
+              <form id="incomeForm" class="row g-2" novalidate>
+                <div class="col-12">
+                  <label class="form-label" for="incomeCategoryId">Income Category</label>
+                  <select id="incomeCategoryId" class="form-select" required></select>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                  <input id="incomeCategoryName" class="form-control" type="text" placeholder="New category (Admin only)" />
+                  <button id="addIncomeCategoryBtn" type="button" class="btn btn-outline-secondary">Add Category</button>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="incomeAmount">Amount</label>
+                  <input id="incomeAmount" type="number" min="0.01" step="0.01" class="form-control" required />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="incomeDate">Date</label>
+                  <input id="incomeDate" type="datetime-local" class="form-control" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="incomeSourceName">Source Name</label>
+                  <input id="incomeSourceName" class="form-control" type="text" required maxlength="120" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="incomeDescription">Description</label>
+                  <input id="incomeDescription" class="form-control" type="text" maxlength="200" />
+                </div>
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-dark w-100">Record Inflow</button>
+                </div>
+              </form>
+            </article>
+          </div>
+          <div class="col-lg-7">
+            <article class="panel-card">
+              <div class="panel-title">Recent Additional Inflows</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Date</th><th>Category</th><th>Source</th><th>Description</th><th>Amount</th><th>Created By</th></tr></thead>
+                  <tbody id="incomeTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-cashflow" class="app-section">
+        <article class="panel-card mb-3">
+          <div class="row g-3">
+            <div class="col-md-4"><article class="metric-card"><p>Current Balance</p><h3 id="cashflowBalance">$0.00</h3></article></div>
+            <div class="col-md-4"><article class="metric-card"><p>Total Inflow</p><h3 id="cashflowIn">$0.00</h3></article></div>
+            <div class="col-md-4"><article class="metric-card"><p>Total Outflow</p><h3 id="cashflowOut">$0.00</h3></article></div>
+          </div>
+        </article>
+        <article class="panel-card">
+          <div class="panel-title">Transaction Ledger</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead><tr><th>Date</th><th>Type</th><th>Direction</th><th>Amount</th><th>Balance After</th><th>Created By</th></tr></thead>
+              <tbody id="transactionsTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
       <section id="section-reports" class="app-section">
         <article class="panel-card mb-3">
           <div class="row g-3 align-items-end">
@@ -710,6 +859,44 @@
             <table class="table table-sm table-hover align-middle mb-0">
               <thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Initiated By</th><th>Last Payment By</th><th>Last Payment Date</th></tr></thead>
               <tbody id="reportInvoicePaymentsBody"></tbody>
+            </table>
+          </div>
+        </article>
+        <div class="row g-3 mt-1">
+          <div class="col-lg-4"><article class="metric-card"><p>Total Expenses</p><h3 id="reportTotalExpenses">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Total Additional Inflow</p><h3 id="reportTotalExtraIncome">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Net Cashflow</p><h3 id="reportNetCashflow">$0.00</h3></article></div>
+        </div>
+        <div class="row g-3 mt-1">
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Expenses By Category</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Category</th><th>Total</th></tr></thead>
+                  <tbody id="reportExpenseByCategoryBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <div class="col-lg-6">
+            <article class="panel-card">
+              <div class="panel-title">Expenses By Vendor</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead><tr><th>Vendor</th><th>Total</th></tr></thead>
+                  <tbody id="reportExpenseByVendorBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+        <article class="panel-card mt-3">
+          <div class="panel-title">Additional Inflow By Category</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead><tr><th>Category</th><th>Total</th></tr></thead>
+              <tbody id="reportIncomeByCategoryBody"></tbody>
             </table>
           </div>
         </article>
