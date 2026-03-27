@@ -538,13 +538,9 @@ function registerIpcHandlers() {
     license: String(packageMeta.license || 'ISC')
   }));
   ipcMain.handle('app:openDocumentation', async () => {
-    const readmePath = path.join(__dirname, 'README.md');
-    if (fs.existsSync(readmePath)) {
-      await shell.openPath(readmePath);
-      return { ok: true, path: readmePath };
-    }
-    await shell.openExternal('https://github.com/koditots/asw-inventory');
-    return { ok: true, path: null };
+    const docsUrl = 'http://austcomswift.com/doc/asw-inventory';
+    await shell.openExternal(docsUrl);
+    return { ok: true, url: docsUrl };
   });
   ipcMain.handle('app:quit', async () => {
     app.quit();
