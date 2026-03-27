@@ -21,7 +21,7 @@
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/austcomswift/asw-inventory.git"
+    "url": "https://github.com/koditots/asw-inventory.git"
   },
   "dependencies": {
     "bootstrap": "^5.3.8",
@@ -51,13 +51,18 @@
       "node_modules/sqlite3/**/*"
     ],
     "win": {
+      "icon": "icon.png",
       "target": [
         "nsis"
       ]
     },
+    "nsis": {
+      "installerIcon": "icon.png",
+      "uninstallerIcon": "icon.png"
+    },
     "publish": {
       "provider": "github",
-      "owner": "austcomswift",
+      "owner": "koditots",
       "repo": "asw-inventory",
       "releaseType": "release"
     }

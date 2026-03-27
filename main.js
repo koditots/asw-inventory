@@ -15,8 +15,9 @@ if (typeof electronImport === 'string') {
   process.exit(0);
 }
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = electronImport;
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = electronImport;
 const { autoUpdater } = require('electron-updater');
+const packageMeta = require('./package.json');
 const db = require('./database/db');
 const { buildInvoiceTemplateHtml, buildInvoiceViewModel } = require('./invoice-template');
 
@@ -166,6 +167,8 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     title: 'ASW Inventory',
+    icon: path.join(__dirname, 'icon.png'),
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: false,
@@ -173,6 +176,7 @@ function createWindow() {
     }
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.on('did-finish-load', () => {
     sendUpdateStatus(currentUpdateState);
   });
@@ -392,6 +396,44 @@ async function hydrateSessionPayload() {
 }
 
 function registerIpcHandlers() {
+  // App/window utility channels used by the custom themed renderer menu.
+  ipcMain.handle('app:getInfo', async () => ({
+    name: app.getName() || packageMeta.productName || 'ASW Inventory',
+    version: app.getVersion(),
+    author: String(packageMeta.author || 'ASW'),
+    license: String(packageMeta.license || 'ISC')
+  }));
+  ipcMain.handle('app:openDocumentation', async () => {
+    const readmePath = path.join(__dirname, 'README.md');
+    if (fs.existsSync(readmePath)) {
+      await shell.openPath(readmePath);
+      return { ok: true, path: readmePath };
+    }
+    await shell.openExternal('https://github.com/koditots/asw-inventory');
+    return { ok: true, path: null };
+  });
+  ipcMain.handle('app:quit', async () => {
+    app.quit();
+    return { ok: true };
+  });
+  ipcMain.handle('window:action', async (_event, payload) => {
+    const action = String(payload?.action || '').trim();
+    const win = BrowserWindow.fromWebContents(_event.sender) || mainWindow;
+    if (!win || win.isDestroyed()) return { ok: false };
+    if (action === 'minimize') win.minimize();
+    else if (action === 'maximize') {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    } else if (action === 'fullscreen') {
+      win.setFullScreen(!win.isFullScreen());
+    } else if (action === 'devtools') {
+      win.webContents.toggleDevTools();
+    } else if (action === 'refresh') {
+      win.webContents.reloadIgnoringCache();
+    }
+    return { ok: true };
+  });
+
   ipcMain.handle('updater:check', async () => checkForUpdatesIfOnline('manual'));
   ipcMain.handle('updater:install', async () => {
     if (!app.isPackaged) return { ok: false, reason: 'dev' };
@@ -898,6 +940,8 @@ function registerIpcHandlers() {
 
 async function bootstrap() {
   await db.initializeDatabase(app);
+  // Hide native menu bar; renderer provides the custom professional menu UI.
+  Menu.setApplicationMenu(null);
   registerIpcHandlers();
   configureAutoUpdater();
   createWindow();

@@ -46,3 +46,18 @@ npm start
 npm run build
 npm run dist
 ```
+
+## Auto-Update Release Flow (GitHub)
+
+- The app is configured to fetch updates from `koditots/asw-inventory` GitHub Releases.
+- CI workflow: `.github/workflows/publish-updates.yml`
+- On every push to `main`, CI checks `package.json` version:
+  - If release tag `v<version>` does not exist, it builds and publishes installer + update metadata.
+  - If it exists, it skips publish.
+
+To ship a new update to installed users:
+
+1. Bump app version in `package.json` (e.g. `1.0.1`).
+2. Commit and push to `main`.
+3. GitHub Action publishes release assets automatically.
+4. Installed apps detect and download update through `electron-updater`.

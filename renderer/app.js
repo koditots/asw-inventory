@@ -8,6 +8,10 @@
 })();
 
 const apiFromIpc = ipcFallback ? {
+  getAppInfo: () => ipcFallback.invoke('app:getInfo'),
+  openDocumentation: () => ipcFallback.invoke('app:openDocumentation'),
+  quitApp: () => ipcFallback.invoke('app:quit'),
+  windowAction: (action) => ipcFallback.invoke('window:action', { action }),
   checkForUpdates: () => ipcFallback.invoke('updater:check'),
   installDownloadedUpdate: () => ipcFallback.invoke('updater:install'),
   onUpdateStatus: (handler) => {
@@ -116,7 +120,11 @@ const state = {
 const sectionTitle = $('sectionTitle');
 const sectionButtons = Array.from(document.querySelectorAll('.section-nav .nav-link'));
 const sections = Array.from(document.querySelectorAll('.app-section'));
+const proMenu = $('proMenu');
 const statusMessageEl = $('statusMessage');
+const aboutModal = $('aboutModal');
+const aboutMetaText = $('aboutMetaText');
+const aboutModalCloseBtn = $('aboutModalCloseBtn');
 const updateBanner = $('updateBanner');
 const updateMessage = $('updateMessage');
 const updateProgress = $('updateProgress');
@@ -293,6 +301,33 @@ const navSvgs = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2H9a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9h.2a1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1V9c0 .4.2.7.6.9H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6z"/></svg>'
 };
 
+const menuItemMeta = {
+  // Label/icon metadata for custom top menu items.
+  'new-invoice': { label: 'New Invoice', icon: navSvgs.invoices },
+  'new-sale': { label: 'New Sale', icon: navSvgs.products },
+  'company-setup': { label: 'Company Setup', icon: navSvgs.company },
+  'backup-db': { label: 'Backup Database', icon: navSvgs.settings },
+  'exit-app': { label: 'Exit', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>' },
+  undo: { label: 'Undo', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14L4 9l5-5"/><path d="M20 20a8 8 0 00-8-8H4"/></svg>' },
+  redo: { label: 'Redo', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 14l5-5-5-5"/><path d="M4 20a8 8 0 018-8h8"/></svg>' },
+  cut: { label: 'Cut', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><path d="M8.12 8.12L20 20"/><path d="M20 4L8.12 15.88"/></svg>' },
+  copy: { label: 'Copy', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><rect x="2" y="2" width="13" height="13" rx="2"/></svg>' },
+  paste: { label: 'Paste', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2h8v4H8z"/><path d="M5 6h14v16H5z"/></svg>' },
+  delete: { label: 'Delete', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>' },
+  'view-dashboard': { label: 'Dashboard', icon: navSvgs.dashboard },
+  'view-products': { label: 'Products', icon: navSvgs.products },
+  'view-customers': { label: 'Customers', icon: navSvgs.customers },
+  'view-suppliers': { label: 'Suppliers', icon: navSvgs.suppliers },
+  'view-reports': { label: 'Reports', icon: navSvgs.reports },
+  refresh: { label: 'Refresh', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.13-3.36L23 10"/><path d="M1 14l5.36 4.36A9 9 0 0020.49 15"/></svg>' },
+  'window-minimize': { label: 'Minimize', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14"/></svg>' },
+  'window-maximize': { label: 'Maximize', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16"/></svg>' },
+  'window-fullscreen': { label: 'Fullscreen', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H3v5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="M16 21h5v-5"/></svg>' },
+  'window-devtools': { label: 'Developer Tools', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18l-6-6 6-6"/><path d="M15 6l6 6-6 6"/></svg>' },
+  documentation: { label: 'Documentation', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v18H6.5A2.5 2.5 0 014 17.5V4.5A2.5 2.5 0 016.5 2z"/></svg>' },
+  about: { label: 'About ASW Inventory', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>' }
+};
+
 const currency = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v || 0);
 const fileUrl = (p) => encodeURI(`file:///${String(p || '').replace(/\\/g, '/')}`);
 const isEmail = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
@@ -383,6 +418,96 @@ function applyNavIcons() {
     const icon = navSvgs[el.dataset.icon] || navSvgs.dashboard;
     el.innerHTML = icon;
   });
+}
+
+function applyProMenuLabelsAndIcons() {
+  if (!proMenu) return;
+  proMenu.querySelectorAll('.menu-item[data-menu-action]').forEach((item) => {
+    const key = item.dataset.menuAction;
+    const meta = menuItemMeta[key];
+    if (!meta) return;
+    item.innerHTML = `<span class="menu-item-icon">${meta.icon}</span><span>${meta.label}</span>`;
+  });
+}
+
+function closeProMenu() {
+  if (!proMenu) return;
+  proMenu.querySelectorAll('.menu-group').forEach((group) => group.classList.remove('open'));
+  proMenu.querySelectorAll('.menu-root-btn').forEach((btn) => btn.classList.remove('active'));
+}
+
+function openProMenu(rootBtn) {
+  if (!proMenu || !rootBtn) return;
+  const parent = rootBtn.closest('.menu-group');
+  const isOpen = parent?.classList.contains('open');
+  closeProMenu();
+  if (isOpen || !parent) return;
+  parent.classList.add('open');
+  rootBtn.classList.add('active');
+}
+
+function setActiveMenuAction(action) {
+  if (!proMenu) return;
+  proMenu.querySelectorAll('.menu-item[data-menu-action]').forEach((item) => {
+    item.classList.toggle('active', item.dataset.menuAction === action);
+  });
+}
+
+function runEditCommand(cmd) {
+  try {
+    document.execCommand(cmd);
+  } catch {
+    // Keep behavior silent if browser blocks specific command.
+  }
+}
+
+async function runBackupDatabase() {
+  const r = await api.backupDatabase();
+  if (r.cancelled) {
+    showStatus('Backup cancelled.', 'warning');
+    return;
+  }
+  showStatus(`Backup saved to ${r.destinationPath}`);
+}
+
+async function handleMenuAction(action) {
+  if (!action) return;
+  setActiveMenuAction(action);
+  if (action === 'new-invoice') {
+    setActiveSection('invoices');
+    await resetInvoiceDraft();
+    showStatus('New invoice draft ready.');
+    return;
+  }
+  if (action === 'new-sale') {
+    setActiveSection('products');
+    saleProductIdInput?.focus();
+    showStatus('Ready to record new sale.');
+    return;
+  }
+  if (action === 'company-setup') { setActiveSection('company'); return; }
+  if (action === 'backup-db') { await runBackupDatabase(); return; }
+  if (action === 'exit-app') { await api.quitApp?.(); return; }
+  if (action === 'undo' || action === 'redo' || action === 'cut' || action === 'copy' || action === 'paste' || action === 'delete') {
+    runEditCommand(action === 'delete' ? 'delete' : action);
+    return;
+  }
+  if (action === 'view-dashboard') { setActiveSection('dashboard'); return; }
+  if (action === 'view-products') { setActiveSection('products'); return; }
+  if (action === 'view-customers') { setActiveSection('customers'); return; }
+  if (action === 'view-suppliers') { setActiveSection('suppliers'); return; }
+  if (action === 'view-reports') { setActiveSection('reports'); return; }
+  if (action === 'refresh') { await api.windowAction?.('refresh'); return; }
+  if (action === 'window-minimize') { await api.windowAction?.('minimize'); return; }
+  if (action === 'window-maximize') { await api.windowAction?.('maximize'); return; }
+  if (action === 'window-fullscreen') { await api.windowAction?.('fullscreen'); return; }
+  if (action === 'window-devtools') { await api.windowAction?.('devtools'); return; }
+  if (action === 'documentation') { await api.openDocumentation?.(); return; }
+  if (action === 'about') {
+    const info = await api.getAppInfo?.();
+    aboutMetaText.textContent = `${info?.name || 'ASW Inventory'} v${info?.version || ''} | Author: ${info?.author || 'ASW'} | License: ${info?.license || 'ISC'}`;
+    aboutModal.classList.add('active');
+  }
 }
 
 function setActiveSection(name) {
@@ -1015,6 +1140,30 @@ async function resetInvoiceDraft() {
   renderInvoicePreview();
 }
 sectionButtons.forEach((b) => b.addEventListener('click', () => setActiveSection(b.dataset.section)));
+proMenu?.addEventListener('click', async (e) => {
+  const rootBtn = e.target.closest('.menu-root-btn');
+  if (rootBtn) {
+    openProMenu(rootBtn);
+    return;
+  }
+  const menuItem = e.target.closest('.menu-item[data-menu-action]');
+  if (!menuItem) return;
+  try {
+    await handleMenuAction(menuItem.dataset.menuAction);
+  } catch (err) {
+    showStatus(err.message || 'Menu action failed.', 'error');
+  } finally {
+    closeProMenu();
+  }
+});
+document.addEventListener('click', (e) => {
+  if (!proMenu || proMenu.contains(e.target)) return;
+  closeProMenu();
+});
+aboutModalCloseBtn?.addEventListener('click', () => aboutModal.classList.remove('active'));
+aboutModal?.addEventListener('click', (e) => {
+  if (e.target === aboutModal) aboutModal.classList.remove('active');
+});
 
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1481,7 +1630,7 @@ clockInViewerModal.addEventListener('click', (e) => {
   if (e.target === clockInViewerModal) clockInViewerModal.classList.remove('active');
 });
 
-backupBtn.addEventListener('click', async () => { try { const r = await api.backupDatabase(); if (r.cancelled) return showStatus('Backup cancelled.', 'warning'); showStatus(`Backup saved to ${r.destinationPath}`); } catch (err) { showStatus(err.message || 'Backup failed.', 'error'); } });
+backupBtn.addEventListener('click', async () => { try { await runBackupDatabase(); } catch (err) { showStatus(err.message || 'Backup failed.', 'error'); } });
 restoreBtn.addEventListener('click', async () => { try { if (!window.confirm('Restore backup and overwrite local data?')) return; const r = await api.restoreDatabase(); if (r.cancelled) return showStatus('Restore cancelled.', 'warning'); await safeRefresh(); showStatus(`Database restored from ${r.restoredFrom}`); } catch (err) { showStatus(err.message || 'Restore failed.', 'error'); } });
 createUserForm.addEventListener('submit', async (e) => { e.preventDefault(); try { await api.createUser({ username: newUsername.value.trim(), password: newPassword.value, isAdmin: false, assignedCompanies: [Number(companySwitcher.value)] }); createUserForm.reset(); await safeRefresh(); showStatus('Quick user created.'); } catch (err) { showStatus(err.message || 'Quick user create failed.', 'error'); } });
 
@@ -1497,6 +1646,7 @@ changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault();
     } else {
       renderUpdateState({ state: 'disabled', message: 'Update service unavailable in this build.' });
     }
+    applyProMenuLabelsAndIcons();
     applyNavIcons();
     resetSimpleForms();
     await resetInvoiceDraft();

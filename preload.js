@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const inventoryApi = {
+  getAppInfo: () => ipcRenderer.invoke('app:getInfo'),
+  openDocumentation: () => ipcRenderer.invoke('app:openDocumentation'),
+  quitApp: () => ipcRenderer.invoke('app:quit'),
+  windowAction: (action) => ipcRenderer.invoke('window:action', { action }),
+
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
   installDownloadedUpdate: () => ipcRenderer.invoke('updater:install'),
   onUpdateStatus: (handler) => {

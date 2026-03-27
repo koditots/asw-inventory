@@ -48,6 +48,57 @@
     </aside>
 
     <main class="main-content">
+      <nav class="pro-menu" id="proMenu" aria-label="Application Menu">
+        <div class="menu-group">
+          <button class="menu-root-btn" data-menu-root="file">File</button>
+          <div class="menu-panel" data-menu-panel="file">
+            <button class="menu-item" data-menu-action="new-invoice"></button>
+            <button class="menu-item" data-menu-action="new-sale"></button>
+            <button class="menu-item" data-menu-action="company-setup"></button>
+            <button class="menu-item" data-menu-action="backup-db"></button>
+            <button class="menu-item menu-danger" data-menu-action="exit-app"></button>
+          </div>
+        </div>
+        <div class="menu-group">
+          <button class="menu-root-btn" data-menu-root="edit">Edit</button>
+          <div class="menu-panel" data-menu-panel="edit">
+            <button class="menu-item" data-menu-action="undo"></button>
+            <button class="menu-item" data-menu-action="redo"></button>
+            <button class="menu-item" data-menu-action="cut"></button>
+            <button class="menu-item" data-menu-action="copy"></button>
+            <button class="menu-item" data-menu-action="paste"></button>
+            <button class="menu-item" data-menu-action="delete"></button>
+          </div>
+        </div>
+        <div class="menu-group">
+          <button class="menu-root-btn" data-menu-root="view">View</button>
+          <div class="menu-panel" data-menu-panel="view">
+            <button class="menu-item" data-menu-action="view-dashboard"></button>
+            <button class="menu-item" data-menu-action="view-products"></button>
+            <button class="menu-item" data-menu-action="view-customers"></button>
+            <button class="menu-item" data-menu-action="view-suppliers"></button>
+            <button class="menu-item" data-menu-action="view-reports"></button>
+            <button class="menu-item" data-menu-action="refresh"></button>
+          </div>
+        </div>
+        <div class="menu-group">
+          <button class="menu-root-btn" data-menu-root="window">Window</button>
+          <div class="menu-panel" data-menu-panel="window">
+            <button class="menu-item" data-menu-action="window-minimize"></button>
+            <button class="menu-item" data-menu-action="window-maximize"></button>
+            <button class="menu-item" data-menu-action="window-fullscreen"></button>
+            <button class="menu-item menu-hidden-by-default" data-menu-action="window-devtools"></button>
+          </div>
+        </div>
+        <div class="menu-group">
+          <button class="menu-root-btn" data-menu-root="help">Help</button>
+          <div class="menu-panel" data-menu-panel="help">
+            <button class="menu-item" data-menu-action="documentation"></button>
+            <button class="menu-item" data-menu-action="about"></button>
+          </div>
+        </div>
+      </nav>
+
       <header class="main-header">
         <h2 id="sectionTitle">Dashboard</h2>
         <p class="header-subtitle">Fully offline inventory management with local SQLite storage.</p>
@@ -886,6 +937,14 @@
       <img id="clockInViewerImage" class="clockin-viewer-image" alt="Clock-In Full View" />
       <p id="clockInViewerMeta" class="login-message" style="color:#334155;"></p>
       <button id="clockInViewerCloseBtn" class="btn btn-dark w-100 mt-2">Close</button>
+    </div>
+  </div>
+
+  <div id="aboutModal" class="login-overlay">
+    <div class="login-card">
+      <h3>About ASW Inventory</h3>
+      <p id="aboutMetaText">Loading...</p>
+      <button id="aboutModalCloseBtn" class="btn btn-dark w-100 mt-2">Close</button>
     </div>
   </div>
 
