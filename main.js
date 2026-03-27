@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const dns = require('dns');
 const { spawn } = require('child_process');
 
@@ -17,6 +18,7 @@ if (typeof electronImport === 'string') {
 
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = electronImport;
 const { autoUpdater } = require('electron-updater');
+const nodemailer = require('nodemailer');
 const packageMeta = require('./package.json');
 const db = require('./database/db');
 const { buildInvoiceTemplateHtml, buildInvoiceViewModel } = require('./invoice-template');
@@ -72,6 +74,7 @@ let mainWindow;
 let activeSession = null;
 const UPDATE_STATUS_CHANNEL = 'updater:status';
 let currentUpdateState = { state: 'idle', message: 'Updater idle.', progress: null, updateReady: false };
+let emailQueueTimer = null;
 
 function sendUpdateStatus(partial = {}) {
   currentUpdateState = { ...currentUpdateState, ...partial };
@@ -94,6 +97,137 @@ async function hasInternetConnection() {
   } catch {
     return false;
   }
+}
+
+function isEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function deriveSmtpCipherKey() {
+  // A simple local encryption key for SMTP credentials at rest.
+  const seed = process.env.ASW_SMTP_SECRET || `${app.getPath('userData')}|asw-inventory-smtp-key`;
+  return crypto.createHash('sha256').update(seed).digest();
+}
+
+function encryptSmtpPassword(plainText) {
+  const text = String(plainText || '');
+  if (!text) return '';
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveSmtpCipherKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1:${iv.toString('base64')}:${tag.toString('base64')}:${encrypted.toString('base64')}`;
+}
+
+function decryptSmtpPassword(cipherText) {
+  const raw = String(cipherText || '');
+  if (!raw) return '';
+  if (!raw.startsWith('v1:')) return raw;
+  const [, iv64, tag64, enc64] = raw.split(':');
+  if (!iv64 || !tag64 || !enc64) return '';
+  const iv = Buffer.from(iv64, 'base64');
+  const tag = Buffer.from(tag64, 'base64');
+  const encrypted = Buffer.from(enc64, 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', deriveSmtpCipherKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+}
+
+function normalizeSmtpConfig(input = {}) {
+  const smtpHost = String(input.smtpHost || '').trim();
+  const smtpPort = Number(input.smtpPort || 0);
+  const smtpUser = String(input.smtpUser || '').trim();
+  const smtpPass = String(input.smtpPass || '').trim();
+  const smtpSecure = Boolean(input.smtpSecure);
+  if (!smtpHost) throw new Error('SMTP host is required.');
+  if (!Number.isFinite(smtpPort) || smtpPort <= 0 || smtpPort > 65535) throw new Error('SMTP port must be between 1 and 65535.');
+  if (!isEmail(smtpUser)) throw new Error('SMTP email address is invalid.');
+  if (!smtpPass) throw new Error('SMTP password is required.');
+  return { smtpHost, smtpPort: Math.round(smtpPort), smtpUser, smtpPass, smtpSecure };
+}
+
+function sanitizeAttachments(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((x) => x && typeof x.path === 'string' && x.path.trim())
+    .map((x) => ({
+      filename: x.filename ? String(x.filename) : path.basename(String(x.path)),
+      path: String(x.path)
+    }));
+}
+
+function parseAttachmentsJson(raw) {
+  try {
+    const parsed = JSON.parse(String(raw || '[]'));
+    return sanitizeAttachments(parsed);
+  } catch {
+    return [];
+  }
+}
+
+async function sendEmailWithConfig(config, payload = {}) {
+  const normalized = normalizeSmtpConfig(config);
+  const to = String(payload.to || '').trim();
+  const subject = String(payload.subject || '').trim();
+  const text = String(payload.text || '').trim();
+  const html = String(payload.html || '').trim();
+  if (!isEmail(to)) throw new Error('Recipient email is invalid.');
+  if (!subject) throw new Error('Email subject is required.');
+  const transporter = nodemailer.createTransport({
+    host: normalized.smtpHost,
+    port: normalized.smtpPort,
+    secure: normalized.smtpSecure,
+    auth: { user: normalized.smtpUser, pass: normalized.smtpPass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
+  });
+  const info = await transporter.sendMail({
+    from: normalized.smtpUser,
+    to,
+    subject,
+    text: text || undefined,
+    html: html || undefined,
+    attachments: sanitizeAttachments(payload.attachments)
+  });
+  return { messageId: info?.messageId || '' };
+}
+
+async function processQueuedEmails(limit = 10) {
+  const online = await hasInternetConnection();
+  if (!online) return;
+  const queueItems = await db.getPendingEmailQueue(limit);
+  for (const item of queueItems) {
+    try {
+      const company = await db.getCompanyEmailConfigRaw(item.companyId);
+      const config = {
+        smtpHost: company.smtpHost,
+        smtpPort: company.smtpPort,
+        smtpUser: company.smtpUser,
+        smtpPass: decryptSmtpPassword(company.smtpPass),
+        smtpSecure: company.smtpSecure
+      };
+      await sendEmailWithConfig(config, {
+        to: item.recipient,
+        subject: item.subject,
+        text: item.textBody,
+        html: item.htmlBody,
+        attachments: parseAttachmentsJson(item.attachments)
+      });
+      await db.markEmailQueuedSent(item.id);
+    } catch (error) {
+      await db.markEmailQueuedFailed(item.id, error?.message || 'Failed to send queued email.');
+    }
+  }
+}
+
+function startEmailQueueWorker() {
+  if (emailQueueTimer) clearInterval(emailQueueTimer);
+  emailQueueTimer = setInterval(() => {
+    processQueuedEmails(12).catch((error) => {
+      console.error('Email queue worker failed:', error);
+    });
+  }, 60 * 1000);
 }
 
 function configureAutoUpdater() {
@@ -432,6 +566,104 @@ function registerIpcHandlers() {
       win.webContents.reloadIgnoringCache();
     }
     return { ok: true };
+  });
+
+  // Email setup + sending module (SMTP).
+  ipcMain.handle('email:settings:get', async () => {
+    requireClockIn();
+    requirePermission('settings', 'edit');
+    return db.getCompanyEmailSetup(getActiveCompanyId());
+  });
+  ipcMain.handle('email:settings:update', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('settings', 'edit');
+    const config = normalizeSmtpConfig(payload || {});
+    return db.updateCompanyEmailSetup(getActiveCompanyId(), {
+      smtpHost: config.smtpHost,
+      smtpPort: config.smtpPort,
+      smtpUser: config.smtpUser,
+      smtpPass: encryptSmtpPassword(config.smtpPass),
+      smtpSecure: config.smtpSecure
+    });
+  });
+  ipcMain.handle('email:testConnection', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('settings', 'edit');
+    let config;
+    if (payload && Object.keys(payload).length) {
+      config = normalizeSmtpConfig(payload);
+    } else {
+      const row = await db.getCompanyEmailConfigRaw(getActiveCompanyId());
+      config = normalizeSmtpConfig({
+        smtpHost: row.smtpHost,
+        smtpPort: row.smtpPort,
+        smtpUser: row.smtpUser,
+        smtpPass: decryptSmtpPassword(row.smtpPass),
+        smtpSecure: row.smtpSecure
+      });
+    }
+    try {
+      const transporter = nodemailer.createTransport({
+        host: config.smtpHost,
+        port: config.smtpPort,
+        secure: config.smtpSecure,
+        auth: { user: config.smtpUser, pass: config.smtpPass },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000
+      });
+      await transporter.verify();
+      return { ok: true };
+    } catch (error) {
+      throw new Error(`SMTP test failed: ${error?.message || 'Connection could not be established.'}`);
+    }
+  });
+  ipcMain.handle('email:send', async (_event, payload) => {
+    requireClockIn();
+    const purpose = String(payload?.purpose || 'invoice').toLowerCase();
+    if (purpose === 'reminder') requirePermission('customers', 'view');
+    else requirePermission('invoices', 'print');
+    const companyId = getActiveCompanyId();
+    const company = await db.getCompanyEmailConfigRaw(companyId);
+    const config = normalizeSmtpConfig({
+      smtpHost: company.smtpHost,
+      smtpPort: company.smtpPort,
+      smtpUser: company.smtpUser,
+      smtpPass: decryptSmtpPassword(company.smtpPass),
+      smtpSecure: company.smtpSecure
+    });
+    const online = await hasInternetConnection();
+    const queueIfOffline = payload?.queueIfOffline !== false;
+    if (!online && queueIfOffline) {
+      const queueId = await db.enqueueEmail({
+        companyId,
+        recipient: payload?.to,
+        subject: payload?.subject,
+        textBody: payload?.text,
+        htmlBody: payload?.html,
+        attachments: sanitizeAttachments(payload?.attachments),
+        purpose
+      });
+      return { ok: true, queued: true, queueId };
+    }
+    try {
+      const result = await sendEmailWithConfig(config, payload || {});
+      return { ok: true, queued: false, messageId: result.messageId };
+    } catch (error) {
+      if (queueIfOffline) {
+        const queueId = await db.enqueueEmail({
+          companyId,
+          recipient: payload?.to,
+          subject: payload?.subject,
+          textBody: payload?.text,
+          htmlBody: payload?.html,
+          attachments: sanitizeAttachments(payload?.attachments),
+          purpose
+        });
+        return { ok: true, queued: true, queueId, warning: error?.message || 'Email queued due to send failure.' };
+      }
+      throw new Error(error?.message || 'Email sending failed.');
+    }
   });
 
   ipcMain.handle('updater:check', async () => checkForUpdatesIfOnline('manual'));
@@ -945,6 +1177,8 @@ async function bootstrap() {
   registerIpcHandlers();
   configureAutoUpdater();
   createWindow();
+  startEmailQueueWorker();
+  processQueuedEmails(12).catch(() => {});
   await checkForUpdatesIfOnline('startup');
 }
 
@@ -962,6 +1196,10 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', async () => {
+  if (emailQueueTimer) {
+    clearInterval(emailQueueTimer);
+    emailQueueTimer = null;
+  }
   try {
     await db.closeDatabase();
   } catch (error) {

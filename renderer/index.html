@@ -845,6 +845,37 @@
               </form>
             </article>
             <article class="panel-card">
+              <div class="panel-title">Company Email Setup (Admin)</div>
+              <form id="emailSettingsForm" class="row g-2" novalidate>
+                <div class="col-md-7">
+                  <label class="form-label" for="emailSmtpHost">SMTP Host</label>
+                  <input id="emailSmtpHost" class="form-control" type="text" placeholder="smtp.example.com" />
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label" for="emailSmtpPort">SMTP Port</label>
+                  <input id="emailSmtpPort" class="form-control" type="number" min="1" max="65535" step="1" value="587" />
+                </div>
+                <div class="col-md-7">
+                  <label class="form-label" for="emailSmtpUser">Email Address</label>
+                  <input id="emailSmtpUser" class="form-control" type="email" placeholder="company@example.com" />
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label" for="emailSmtpPass">Password</label>
+                  <input id="emailSmtpPass" class="form-control" type="password" placeholder="SMTP password" />
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input id="emailSmtpSecure" class="form-check-input" type="checkbox" />
+                    <label class="form-check-label" for="emailSmtpSecure">Use SSL/TLS</label>
+                  </div>
+                </div>
+                <div class="col-12 mt-2 d-flex gap-2">
+                  <button type="button" id="testEmailConnectionBtn" class="btn btn-outline-primary">Test Connection</button>
+                  <button type="submit" class="btn btn-dark">Save Email Setup</button>
+                </div>
+              </form>
+            </article>
+            <article class="panel-card mt-3">
               <div class="panel-title">Database Maintenance</div>
               <p class="text-muted mb-3">Backup and restore your local SQLite database.</p>
               <div class="d-flex gap-2">

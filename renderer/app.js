@@ -80,6 +80,10 @@ const apiFromIpc = ipcFallback ? {
   renderInvoiceTemplate: (payload) => ipcFallback.invoke('invoices:renderTemplate', payload),
   getInvoiceSettings: () => ipcFallback.invoke('settings:get'),
   updateInvoiceSettings: (payload) => ipcFallback.invoke('settings:update', payload),
+  getEmailSettings: () => ipcFallback.invoke('email:settings:get'),
+  saveEmailSettings: (payload) => ipcFallback.invoke('email:settings:update', payload),
+  testEmailConnection: (payload) => ipcFallback.invoke('email:testConnection', payload),
+  sendEmail: (payload) => ipcFallback.invoke('email:send', payload),
   getDashboardStats: () => ipcFallback.invoke('dashboard:getStats'),
   getRecentActivities: (payload) => ipcFallback.invoke('dashboard:getActivities', payload),
   getSalesReport: (payload) => ipcFallback.invoke('reports:getSales', payload),
@@ -110,6 +114,7 @@ const state = {
   report: null,
   company: null,
   invoiceSettings: { defaultTaxRate: 0, termsConditions: '' },
+  emailSettings: { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false },
   stream: null,
   clockIns: [],
   dashboardSalesReport: null,
@@ -277,6 +282,13 @@ const restoreBtn = $('restoreBtn');
 const invoiceSettingsForm = $('invoiceSettingsForm');
 const settingsDefaultTaxRate = $('settingsDefaultTaxRate');
 const settingsTermsConditions = $('settingsTermsConditions');
+const emailSettingsForm = $('emailSettingsForm');
+const emailSmtpHost = $('emailSmtpHost');
+const emailSmtpPort = $('emailSmtpPort');
+const emailSmtpUser = $('emailSmtpUser');
+const emailSmtpPass = $('emailSmtpPass');
+const emailSmtpSecure = $('emailSmtpSecure');
+const testEmailConnectionBtn = $('testEmailConnectionBtn');
 const createUserForm = $('createUserForm');
 const newUsername = $('newUsername');
 const newPassword = $('newPassword');
@@ -700,8 +712,20 @@ function renderInvoiceSettings() {
     const wrapper = invoiceSettingsForm.closest('.panel-card');
     if (wrapper) wrapper.style.display = can('settings', 'edit') ? '' : 'none';
   }
+  if (emailSettingsForm) {
+    const wrapper = emailSettingsForm.closest('.panel-card');
+    if (wrapper) wrapper.style.display = can('settings', 'edit') ? '' : 'none';
+  }
   settingsDefaultTaxRate.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
   settingsTermsConditions.value = state.invoiceSettings.termsConditions || '';
+  if (emailSmtpHost) emailSmtpHost.value = state.emailSettings.smtpHost || '';
+  if (emailSmtpPort) emailSmtpPort.value = String(Number(state.emailSettings.smtpPort || 587));
+  if (emailSmtpUser) emailSmtpUser.value = state.emailSettings.smtpUser || '';
+  if (emailSmtpPass) emailSmtpPass.value = '';
+  if (emailSmtpSecure) emailSmtpSecure.checked = Boolean(state.emailSettings.smtpSecure);
+  if (emailSmtpPass && state.emailSettings.hasPassword) {
+    emailSmtpPass.placeholder = 'Saved (leave blank to keep existing password)';
+  }
 }
 
 async function refreshInvoiceNumber() {
@@ -1057,7 +1081,10 @@ async function refreshData() {
       : Promise.resolve(null)
   ]);
   const invoiceSettings = can('settings', 'view') ? await api.getInvoiceSettings() : { defaultTaxRate: 0, termsConditions: '' };
-  state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '' };
+  const emailSettings = can('settings', 'edit')
+    ? await api.getEmailSettings()
+    : { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
+  state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '' }; state.emailSettings = emailSettings || { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
   state.roles = can('roles', 'view') ? await api.getRoles() : [];
   state.users = can('users', 'view') ? await api.getUsers() : [];
   if (!state.invoiceDraft.invoiceNumber) await refreshInvoiceNumber();
@@ -1544,6 +1571,42 @@ invoiceSettingsForm.addEventListener('submit', async (e) => {
     renderInvoicePreview();
     showStatus('Invoice settings saved.');
   } catch (err) { showStatus(err.message || 'Unable to save invoice settings.', 'error'); }
+});
+
+function buildEmailSettingsPayload() {
+  const smtpHost = String(emailSmtpHost?.value || '').trim();
+  const smtpPort = Number(emailSmtpPort?.value || 0);
+  const smtpUser = String(emailSmtpUser?.value || '').trim();
+  const smtpPass = String(emailSmtpPass?.value || '').trim();
+  const smtpSecure = Boolean(emailSmtpSecure?.checked);
+  if (!smtpHost) throw new Error('SMTP host is required.');
+  if (!Number.isFinite(smtpPort) || smtpPort <= 0 || smtpPort > 65535) throw new Error('SMTP port must be between 1 and 65535.');
+  if (!isEmail(smtpUser)) throw new Error('A valid SMTP email address is required.');
+  return { smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure };
+}
+
+testEmailConnectionBtn?.addEventListener('click', async () => {
+  try {
+    const payload = buildEmailSettingsPayload();
+    if (!payload.smtpPass && state.emailSettings?.hasPassword) delete payload.smtpPass;
+    await api.testEmailConnection(payload);
+    showStatus('SMTP connection test succeeded.');
+  } catch (err) {
+    showStatus(err.message || 'SMTP connection test failed.', 'error');
+  }
+});
+
+emailSettingsForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const payload = buildEmailSettingsPayload();
+    if (!payload.smtpPass && state.emailSettings?.hasPassword) delete payload.smtpPass;
+    state.emailSettings = await api.saveEmailSettings(payload);
+    renderInvoiceSettings();
+    showStatus('Company email setup saved.');
+  } catch (err) {
+    showStatus(err.message || 'Unable to save company email setup.', 'error');
+  }
 });
 
 userForm.addEventListener('submit', async (e) => {

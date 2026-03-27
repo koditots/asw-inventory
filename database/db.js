@@ -117,6 +117,11 @@ async function migrate() {
     account_number TEXT DEFAULT '',
     payment_methods TEXT DEFAULT '[]',
     primary_color TEXT NOT NULL DEFAULT '#f4c214',
+    smtp_host TEXT NOT NULL DEFAULT '',
+    smtp_port INTEGER NOT NULL DEFAULT 587,
+    smtp_user TEXT NOT NULL DEFAULT '',
+    smtp_pass TEXT NOT NULL DEFAULT '',
+    smtp_secure INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )`);
 
@@ -279,6 +284,23 @@ async function migrate() {
     created_at TEXT NOT NULL
   )`);
 
+  await run(`CREATE TABLE IF NOT EXISTS email_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    recipient TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    text_body TEXT NOT NULL DEFAULT '',
+    html_body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    purpose TEXT NOT NULL DEFAULT 'general',
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    sent_at TEXT
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_email_queue_company_status ON email_queue(company_id, status, created_at)');
+
   await ensureCol('products', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('products', 'category_id', 'INTEGER');
   await ensureCol('products', 'supplier_id', 'INTEGER');
@@ -288,6 +310,11 @@ async function migrate() {
   await ensureCol('products', 'expiry_date', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('company', 'created_at', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('company', 'primary_color', "TEXT NOT NULL DEFAULT '#f4c214'");
+  await ensureCol('company', 'smtp_host', "TEXT NOT NULL DEFAULT ''");
+  await ensureCol('company', 'smtp_port', 'INTEGER NOT NULL DEFAULT 587');
+  await ensureCol('company', 'smtp_user', "TEXT NOT NULL DEFAULT ''");
+  await ensureCol('company', 'smtp_pass', "TEXT NOT NULL DEFAULT ''");
+  await ensureCol('company', 'smtp_secure', 'INTEGER NOT NULL DEFAULT 0');
   await ensureCol('sales', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('sales', 'customer_id', 'INTEGER');
   await ensureCol('sales', 'created_by', 'INTEGER');
@@ -351,6 +378,11 @@ async function migrate() {
   await run("UPDATE products SET expiry_date = '' WHERE expiry_date IS NULL");
   await run("UPDATE company SET created_at = ? WHERE created_at IS NULL OR TRIM(created_at) = ''", [new Date().toISOString()]);
   await run("UPDATE company SET primary_color = '#f4c214' WHERE primary_color IS NULL OR TRIM(primary_color) = ''");
+  await run("UPDATE company SET smtp_host = '' WHERE smtp_host IS NULL");
+  await run("UPDATE company SET smtp_port = 587 WHERE smtp_port IS NULL OR smtp_port <= 0");
+  await run("UPDATE company SET smtp_user = '' WHERE smtp_user IS NULL");
+  await run("UPDATE company SET smtp_pass = '' WHERE smtp_pass IS NULL");
+  await run("UPDATE company SET smtp_secure = 0 WHERE smtp_secure IS NULL");
   await run("UPDATE invoices SET created_at = COALESCE(NULLIF(TRIM(created_at), ''), date) WHERE created_at IS NULL OR TRIM(created_at) = ''");
   await run("UPDATE invoices SET date = COALESCE(NULLIF(TRIM(date), ''), created_at) WHERE date IS NULL OR TRIM(date) = ''");
   await run("UPDATE invoices SET items = '[]' WHERE items IS NULL OR TRIM(items) = ''");
@@ -425,7 +457,12 @@ function normalizeCompany(row) {
     accountNumber: row.account_number || '',
     paymentMethods: parseJsonArray(row.payment_methods),
     primaryColor: isHexColor(row.primary_color) ? String(row.primary_color).trim() : '#f4c214',
-    industryType: String(row.industry_type || 'retail')
+    industryType: String(row.industry_type || 'retail'),
+    smtpHost: String(row.smtp_host || ''),
+    smtpPort: toInt(row.smtp_port, 587),
+    smtpUser: String(row.smtp_user || ''),
+    smtpSecure: Number(row.smtp_secure || 0) === 1,
+    smtpPass: ''
   };
 }
 
@@ -463,11 +500,19 @@ function mapCompanyInput(payload, fallback = {}) {
   const primaryColorRaw = String(payload.primaryColor ?? fallback.primaryColor ?? '#f4c214').trim();
   const primaryColor = isHexColor(primaryColorRaw) ? primaryColorRaw : '#f4c214';
   const industryType = String(payload.industryType ?? fallback.industryType ?? 'retail').trim().toLowerCase() || 'retail';
+  const smtpHost = String(payload.smtpHost ?? fallback.smtpHost ?? '').trim();
+  const smtpPortRaw = payload.smtpPort ?? fallback.smtpPort ?? 587;
+  const smtpPort = Number(smtpPortRaw);
+  const smtpUser = String(payload.smtpUser ?? fallback.smtpUser ?? '').trim();
+  const smtpPass = String(payload.smtpPass ?? fallback.smtpPass ?? '').trim();
+  const smtpSecure = Boolean(payload.smtpSecure ?? fallback.smtpSecure ?? false);
   const paymentMethods = normalizePaymentMethods(payload.paymentMethods ?? fallback.paymentMethods ?? []);
   if (!name) throw new Error('Company name is required.');
   if (!isEmail(email)) throw new Error('Please provide a valid company email.');
   if (accountNumber && !/^\d+$/.test(accountNumber)) throw new Error('Account number must contain only digits.');
-  return { name, address, phone, email, logoPath, signaturePath, bankName, accountNumber, paymentMethods, primaryColor, industryType };
+  if (!Number.isFinite(smtpPort) || smtpPort <= 0 || smtpPort > 65535) throw new Error('SMTP port must be between 1 and 65535.');
+  if (smtpUser && !isEmail(smtpUser)) throw new Error('SMTP user must be a valid email address.');
+  return { name, address, phone, email, logoPath, signaturePath, bankName, accountNumber, paymentMethods, primaryColor, industryType, smtpHost, smtpPort: Math.round(smtpPort), smtpUser, smtpPass, smtpSecure };
 }
 
 function normalizePaymentMethods(value) {
@@ -478,8 +523,8 @@ function normalizePaymentMethods(value) {
 async function createCompany(payload) {
   const input = mapCompanyInput(payload || {});
   const result = await run(
-    `INSERT INTO company (name, address, phone, email, logo_path, signature_path, bank_name, account_number, payment_methods, primary_color, industry_type, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO company (name, address, phone, email, logo_path, signature_path, bank_name, account_number, payment_methods, primary_color, industry_type, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.address,
@@ -492,6 +537,11 @@ async function createCompany(payload) {
       JSON.stringify(input.paymentMethods),
       input.primaryColor,
       input.industryType,
+      input.smtpHost,
+      input.smtpPort,
+      input.smtpUser,
+      input.smtpPass,
+      input.smtpSecure ? 1 : 0,
       new Date().toISOString()
     ]
   );
@@ -507,12 +557,29 @@ async function createCompany(payload) {
 async function updateCompany(companyId, payload) {
   const id = toInt(companyId, -1);
   if (id <= 0) throw new Error('A valid company ID is required.');
-  const existing = await getCompanyById(id);
-  if (!existing) throw new Error('Company not found.');
-  const input = mapCompanyInput(payload || {}, existing);
+  const existingRow = await get('SELECT * FROM company WHERE id = ?', [id]);
+  if (!existingRow) throw new Error('Company not found.');
+  const input = mapCompanyInput(payload || {}, {
+    name: existingRow.name,
+    address: existingRow.address,
+    phone: existingRow.phone,
+    email: existingRow.email,
+    logoPath: existingRow.logo_path,
+    signaturePath: existingRow.signature_path,
+    bankName: existingRow.bank_name,
+    accountNumber: existingRow.account_number,
+    paymentMethods: parseJsonArray(existingRow.payment_methods),
+    primaryColor: existingRow.primary_color,
+    industryType: existingRow.industry_type,
+    smtpHost: existingRow.smtp_host,
+    smtpPort: existingRow.smtp_port,
+    smtpUser: existingRow.smtp_user,
+    smtpPass: existingRow.smtp_pass,
+    smtpSecure: Number(existingRow.smtp_secure || 0) === 1
+  });
   await run(
     `UPDATE company
-     SET name = ?, address = ?, phone = ?, email = ?, logo_path = ?, signature_path = ?, bank_name = ?, account_number = ?, payment_methods = ?, primary_color = ?, industry_type = ?
+     SET name = ?, address = ?, phone = ?, email = ?, logo_path = ?, signature_path = ?, bank_name = ?, account_number = ?, payment_methods = ?, primary_color = ?, industry_type = ?, smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?, smtp_secure = ?
      WHERE id = ?`,
     [
       input.name,
@@ -526,10 +593,134 @@ async function updateCompany(companyId, payload) {
       JSON.stringify(input.paymentMethods),
       input.primaryColor,
       input.industryType,
+      input.smtpHost,
+      input.smtpPort,
+      input.smtpUser,
+      input.smtpPass,
+      input.smtpSecure ? 1 : 0,
       id
     ]
   );
   return getCompanyById(id);
+}
+
+async function getCompanyEmailSetup(companyId) {
+  const id = toInt(companyId, -1);
+  if (id <= 0) throw new Error('A valid company ID is required.');
+  const row = await get(
+    `SELECT id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure
+     FROM company
+     WHERE id = ?`,
+    [id]
+  );
+  if (!row) throw new Error('Company not found.');
+  return {
+    companyId: row.id,
+    smtpHost: String(row.smtp_host || ''),
+    smtpPort: toInt(row.smtp_port, 587),
+    smtpUser: String(row.smtp_user || ''),
+    smtpPass: '',
+    smtpSecure: Number(row.smtp_secure || 0) === 1,
+    hasPassword: Boolean(String(row.smtp_pass || ''))
+  };
+}
+
+async function getCompanyEmailConfigRaw(companyId) {
+  const id = toInt(companyId, -1);
+  if (id <= 0) throw new Error('A valid company ID is required.');
+  const row = await get(
+    `SELECT smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure
+     FROM company
+     WHERE id = ?`,
+    [id]
+  );
+  if (!row) throw new Error('Company not found.');
+  return {
+    smtpHost: String(row.smtp_host || ''),
+    smtpPort: toInt(row.smtp_port, 587),
+    smtpUser: String(row.smtp_user || ''),
+    smtpPass: String(row.smtp_pass || ''),
+    smtpSecure: Number(row.smtp_secure || 0) === 1
+  };
+}
+
+async function updateCompanyEmailSetup(companyId, payload = {}) {
+  const id = toInt(companyId, -1);
+  if (id <= 0) throw new Error('A valid company ID is required.');
+  const row = await get('SELECT smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure FROM company WHERE id = ?', [id]);
+  if (!row) throw new Error('Company not found.');
+  const smtpHost = String(payload.smtpHost ?? row.smtp_host ?? '').trim();
+  const smtpPortValue = Number(payload.smtpPort ?? row.smtp_port ?? 587);
+  const smtpUser = String(payload.smtpUser ?? row.smtp_user ?? '').trim();
+  const smtpPassInput = String(payload.smtpPass ?? '').trim();
+  const smtpPass = smtpPassInput || String(row.smtp_pass || '');
+  const smtpSecure = Boolean(payload.smtpSecure ?? (Number(row.smtp_secure || 0) === 1));
+  if (!smtpHost) throw new Error('SMTP host is required.');
+  if (!Number.isFinite(smtpPortValue) || smtpPortValue <= 0 || smtpPortValue > 65535) throw new Error('SMTP port must be between 1 and 65535.');
+  if (!smtpUser || !isEmail(smtpUser)) throw new Error('SMTP email address is required.');
+  if (!smtpPass) throw new Error('SMTP password is required.');
+  await run(
+    `UPDATE company
+     SET smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?, smtp_secure = ?
+     WHERE id = ?`,
+    [smtpHost, Math.round(smtpPortValue), smtpUser, smtpPass, smtpSecure ? 1 : 0, id]
+  );
+  return getCompanyEmailSetup(id);
+}
+
+async function enqueueEmail(payload = {}) {
+  const companyId = toInt(payload.companyId, -1);
+  const recipient = String(payload.recipient || '').trim();
+  const subject = String(payload.subject || '').trim();
+  const textBody = String(payload.textBody || '').trim();
+  const htmlBody = String(payload.htmlBody || '').trim();
+  const purpose = String(payload.purpose || 'general').trim().toLowerCase() || 'general';
+  const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+  if (companyId <= 0) throw new Error('Company ID is required.');
+  if (!isEmail(recipient)) throw new Error('A valid recipient email is required.');
+  if (!subject) throw new Error('Email subject is required.');
+  const result = await run(
+    `INSERT INTO email_queue (company_id, recipient, subject, text_body, html_body, attachments, purpose, status, attempts, last_error, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, '', ?)`,
+    [companyId, recipient, subject, textBody, htmlBody, JSON.stringify(attachments), purpose, new Date().toISOString()]
+  );
+  return result.id;
+}
+
+async function getPendingEmailQueue(limit = 20) {
+  const lim = Math.max(1, Math.min(100, toInt(limit, 20)));
+  return all(
+    `SELECT id, company_id AS companyId, recipient, subject, text_body AS textBody, html_body AS htmlBody,
+            attachments, purpose, status, attempts, last_error AS lastError, created_at AS createdAt, sent_at AS sentAt
+     FROM email_queue
+     WHERE status = 'pending'
+     ORDER BY created_at ASC
+     LIMIT ?`,
+    [lim]
+  );
+}
+
+async function markEmailQueuedSent(id) {
+  const queueId = toInt(id, -1);
+  if (queueId <= 0) return;
+  await run(
+    `UPDATE email_queue
+     SET status = 'sent', sent_at = ?, last_error = ''
+     WHERE id = ?`,
+    [new Date().toISOString(), queueId]
+  );
+}
+
+async function markEmailQueuedFailed(id, message = '') {
+  const queueId = toInt(id, -1);
+  if (queueId <= 0) return;
+  const msg = String(message || '').slice(0, 400);
+  await run(
+    `UPDATE email_queue
+     SET attempts = attempts + 1, last_error = ?
+     WHERE id = ?`,
+    [msg, queueId]
+  );
 }
 
 async function deleteCompany(companyId) {
@@ -1803,12 +1994,15 @@ function closeDatabase() {
 module.exports = {
   initializeDatabase,
   getCompanyById,
+  getCompanyEmailSetup,
+  getCompanyEmailConfigRaw,
   getAllCompanies,
   getCompaniesForUser,
   getCompanySettings,
   updateCompanySettings,
   createCompany,
   updateCompany,
+  updateCompanyEmailSetup,
   deleteCompany,
   createCategory,
   getCategories,
@@ -1864,6 +2058,10 @@ module.exports = {
   recordClockIn,
   getRecentClockIns,
   getDatabasePath,
+  enqueueEmail,
+  getPendingEmailQueue,
+  markEmailQueuedSent,
+  markEmailQueuedFailed,
   restoreDatabase,
   closeDatabase
 };

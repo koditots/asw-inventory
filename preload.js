@@ -86,6 +86,10 @@ const inventoryApi = {
 
   getInvoiceSettings: () => ipcRenderer.invoke('settings:get'),
   updateInvoiceSettings: (payload) => ipcRenderer.invoke('settings:update', payload),
+  getEmailSettings: () => ipcRenderer.invoke('email:settings:get'),
+  saveEmailSettings: (payload) => ipcRenderer.invoke('email:settings:update', payload),
+  testEmailConnection: (payload) => ipcRenderer.invoke('email:testConnection', payload),
+  sendEmail: (payload) => ipcRenderer.invoke('email:send', payload),
 
   getDashboardStats: () => ipcRenderer.invoke('dashboard:getStats'),
   getRecentActivities: (payload) => ipcRenderer.invoke('dashboard:getActivities', payload),
