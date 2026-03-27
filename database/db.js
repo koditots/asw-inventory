@@ -184,6 +184,7 @@ async function migrate() {
     tax_amount REAL NOT NULL DEFAULT 0,
     discount_amount REAL NOT NULL DEFAULT 0,
     total_amount REAL NOT NULL CHECK(total_amount >= 0),
+    revenue_amount REAL NOT NULL DEFAULT 0 CHECK(revenue_amount >= 0),
     amount_paid REAL NOT NULL DEFAULT 0 CHECK(amount_paid >= 0),
     balance REAL NOT NULL DEFAULT 0 CHECK(balance >= 0),
     payment_status TEXT NOT NULL DEFAULT 'unpaid',
@@ -220,6 +221,7 @@ async function migrate() {
     company_id INTEGER NOT NULL UNIQUE,
     default_tax_rate REAL NOT NULL DEFAULT 0,
     terms_conditions TEXT NOT NULL DEFAULT '',
+    include_revenue_in_balance INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`);
@@ -422,6 +424,7 @@ async function migrate() {
   await ensureCol('invoices', 'tax_amount', 'REAL NOT NULL DEFAULT 0');
   await ensureCol('invoices', 'discount_amount', 'REAL NOT NULL DEFAULT 0');
   await ensureCol('invoices', 'total_amount', 'REAL NOT NULL DEFAULT 0');
+  await ensureCol('invoices', 'revenue_amount', 'REAL NOT NULL DEFAULT 0');
   await ensureCol('invoices', 'type', "TEXT NOT NULL DEFAULT 'invoice'");
   await ensureCol('invoices', 'status', "TEXT NOT NULL DEFAULT 'draft'");
   await ensureCol('invoices', 'validity_period', "TEXT NOT NULL DEFAULT ''");
@@ -446,6 +449,7 @@ async function migrate() {
   await ensureCol('settings', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('settings', 'default_tax_rate', 'REAL NOT NULL DEFAULT 0');
   await ensureCol('settings', 'terms_conditions', "TEXT NOT NULL DEFAULT ''");
+  await ensureCol('settings', 'include_revenue_in_balance', 'INTEGER NOT NULL DEFAULT 0');
   await ensureCol('settings', 'created_at', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('settings', 'updated_at', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('roles', 'permissions', "TEXT NOT NULL DEFAULT '{}'");
@@ -487,6 +491,7 @@ async function migrate() {
   await run("UPDATE invoices SET items = '[]' WHERE items IS NULL OR TRIM(items) = ''");
   await run("UPDATE invoices SET validity_period = '' WHERE validity_period IS NULL");
   await run("UPDATE invoices SET amount_paid = 0 WHERE amount_paid IS NULL OR amount_paid < 0");
+  await run("UPDATE invoices SET revenue_amount = COALESCE(total_amount, 0) WHERE revenue_amount IS NULL OR revenue_amount < 0");
   await run("UPDATE invoices SET balance = COALESCE(total_amount, 0) WHERE balance IS NULL OR balance < 0");
   await run("UPDATE invoices SET payment_status = 'unpaid' WHERE payment_status IS NULL OR TRIM(payment_status) = ''");
   await run("UPDATE invoices SET last_payment_at = '' WHERE last_payment_at IS NULL");
@@ -604,8 +609,8 @@ async function migrate() {
   const companies = await all('SELECT id FROM company');
   for (const c of companies) {
     await run(
-      `INSERT OR IGNORE INTO settings (company_id, default_tax_rate, terms_conditions, created_at, updated_at)
-       VALUES (?, 0, '', ?, ?)`,
+      `INSERT OR IGNORE INTO settings (company_id, default_tax_rate, terms_conditions, include_revenue_in_balance, created_at, updated_at)
+       VALUES (?, 0, '', 0, ?, ?)`,
       [c.id, new Date().toISOString(), new Date().toISOString()]
     );
     await run(
@@ -651,6 +656,7 @@ async function migrate() {
   );
   await run("UPDATE settings SET created_at = ? WHERE created_at IS NULL OR TRIM(created_at) = ''", [new Date().toISOString()]);
   await run("UPDATE settings SET updated_at = ? WHERE updated_at IS NULL OR TRIM(updated_at) = ''", [new Date().toISOString()]);
+  await run("UPDATE settings SET include_revenue_in_balance = 0 WHERE include_revenue_in_balance IS NULL");
   await run('UPDATE users SET is_active = 1 WHERE is_active IS NULL');
   await run("UPDATE users SET profile_image_path = '' WHERE profile_image_path IS NULL");
   await run("UPDATE roles SET permissions = '{}' WHERE permissions IS NULL OR TRIM(permissions) = ''");
@@ -771,8 +777,8 @@ async function createCompany(payload) {
   );
   const stamp = new Date().toISOString();
   await run(
-    `INSERT OR IGNORE INTO settings (company_id, default_tax_rate, terms_conditions, created_at, updated_at)
-     VALUES (?, 0, '', ?, ?)`,
+    `INSERT OR IGNORE INTO settings (company_id, default_tax_rate, terms_conditions, include_revenue_in_balance, created_at, updated_at)
+     VALUES (?, 0, '', 0, ?, ?)`,
     [result.id, stamp, stamp]
   );
   await run(
@@ -1343,6 +1349,21 @@ async function getDashboardStats(companyId, userId = null) {
      WHERE company_id = ?`,
     [cid]
   );
+  const revenueTotals = await get(
+    `SELECT
+       COALESCE(SUM(COALESCE(revenue_amount, total_amount)), 0) AS totalRevenue,
+       COALESCE(SUM(amount_paid), 0) AS cashReceivedFromInvoices,
+       COALESCE(SUM(balance), 0) AS outstandingRevenue
+     FROM invoices
+     WHERE company_id = ?`,
+    [cid]
+  );
+  const settingsRow = await get('SELECT include_revenue_in_balance FROM settings WHERE company_id = ?', [cid]);
+  const includeRevenueInBalance = Number(settingsRow?.include_revenue_in_balance || 0) === 1;
+  const totalRevenue = Number(revenueTotals?.totalRevenue || 0);
+  const totalCashReceived = Number(revenueTotals?.cashReceivedFromInvoices || 0);
+  const outstandingRevenue = Number(Math.max(0, totalRevenue - totalCashReceived).toFixed(2));
+  const projectedBalance = Number((Number(wallet?.currentBalance || 0) + (includeRevenueInBalance ? outstandingRevenue : 0)).toFixed(2));
   return {
     totalProducts: totalProductsRow?.totalProducts || 0,
     lowStock,
@@ -1358,6 +1379,11 @@ async function getDashboardStats(companyId, userId = null) {
     totalInflow: Number(flowTotals?.totalInflow || 0),
     totalOutflow: Number(flowTotals?.totalOutflow || 0),
     walletBalance: Number(wallet?.currentBalance || 0),
+    totalRevenue,
+    totalCashReceived,
+    outstandingRevenue,
+    includeRevenueInBalance,
+    projectedBalance,
     debtors: debtors.map((d) => ({
       invoiceId: d.invoiceId,
       invoiceNumber: d.invoiceNumber,
@@ -1989,6 +2015,81 @@ async function getCashflowReport(companyId, period = 'monthly') {
   };
 }
 
+async function getRevenueReport(companyId, period = 'monthly') {
+  const cid = toInt(companyId, -1);
+  const range = buildReportRange(period);
+  const summary = await get(
+    `SELECT
+       COALESCE(SUM(COALESCE(revenue_amount, total_amount)), 0) AS totalRevenue,
+       COALESCE(SUM(amount_paid), 0) AS totalCashReceived
+     FROM invoices
+     WHERE company_id = ? AND date BETWEEN ? AND ?`,
+    [cid, range.startIso, range.endIso]
+  );
+  const byCustomer = await all(
+    `SELECT COALESCE(c.name, 'Walk-in Customer') AS customerName,
+            COUNT(i.id) AS invoices,
+            COALESCE(SUM(COALESCE(i.revenue_amount, i.total_amount)), 0) AS totalRevenue,
+            COALESCE(SUM(i.amount_paid), 0) AS totalCashReceived,
+            COALESCE(SUM(i.balance), 0) AS outstandingRevenue
+     FROM invoices i
+     LEFT JOIN customers c ON c.id = i.customer_id
+     WHERE i.company_id = ? AND i.date BETWEEN ? AND ?
+     GROUP BY COALESCE(c.name, 'Walk-in Customer')
+     ORDER BY totalRevenue DESC`,
+    [cid, range.startIso, range.endIso]
+  );
+  const totalRevenue = Number(summary?.totalRevenue || 0);
+  const totalCashReceived = Number(summary?.totalCashReceived || 0);
+  return {
+    period,
+    startDate: range.startIso,
+    endDate: range.endIso,
+    totalRevenue,
+    totalCashReceived,
+    outstandingRevenue: Number(Math.max(0, totalRevenue - totalCashReceived).toFixed(2)),
+    byCustomer: byCustomer.map((row) => ({
+      customerName: row.customerName || '',
+      invoices: Number(row.invoices || 0),
+      totalRevenue: Number(row.totalRevenue || 0),
+      totalCashReceived: Number(row.totalCashReceived || 0),
+      outstandingRevenue: Number(row.outstandingRevenue || 0)
+    }))
+  };
+}
+
+async function getCombinedFinancialReport(companyId, period = 'monthly') {
+  const cid = toInt(companyId, -1);
+  const range = buildReportRange(period);
+  const revenueRow = await get(
+    `SELECT
+       COALESCE(SUM(COALESCE(revenue_amount, total_amount)), 0) AS totalRevenue,
+       COALESCE(SUM(amount_paid), 0) AS totalCashReceived
+     FROM invoices
+     WHERE company_id = ? AND date BETWEEN ? AND ?`,
+    [cid, range.startIso, range.endIso]
+  );
+  const expenseRow = await get(
+    `SELECT COALESCE(SUM(amount), 0) AS totalExpenses
+     FROM expenses
+     WHERE company_id = ? AND created_at BETWEEN ? AND ?`,
+    [cid, range.startIso, range.endIso]
+  );
+  const totalRevenue = Number(revenueRow?.totalRevenue || 0);
+  const totalCashReceived = Number(revenueRow?.totalCashReceived || 0);
+  const totalExpenses = Number(expenseRow?.totalExpenses || 0);
+  return {
+    period,
+    startDate: range.startIso,
+    endDate: range.endIso,
+    totalRevenue,
+    totalCashReceived,
+    outstandingRevenue: Number(Math.max(0, totalRevenue - totalCashReceived).toFixed(2)),
+    totalExpenses,
+    netProfit: Number((totalRevenue - totalExpenses).toFixed(2))
+  };
+}
+
 async function getReceipts(companyId, payload = {}) {
   const cid = toInt(companyId, -1);
   const limit = Math.max(1, Math.min(200, toInt(payload.limit, 50)));
@@ -2054,6 +2155,7 @@ function normalizeInvoiceRow(row) {
     taxAmount: Number(row.tax_amount || 0),
     discountAmount: Number(row.discount_amount || 0),
     totalAmount: Number(row.total_amount || 0),
+    revenueAmount: Number(row.revenue_amount || row.total_amount || 0),
     amountPaid: Number(row.amount_paid || 0),
     balance: Number(row.balance || 0),
     paymentStatus: normalizePaymentStatus(row.payment_status),
@@ -2075,7 +2177,8 @@ function normalizeCompanySettings(row, companyId) {
   return {
     companyId: toInt(row?.company_id, toInt(companyId, 1)),
     defaultTaxRate: Number(row?.default_tax_rate || 0),
-    termsConditions: String(row?.terms_conditions || '')
+    termsConditions: String(row?.terms_conditions || ''),
+    includeRevenueInBalance: Number(row?.include_revenue_in_balance || 0) === 1
   };
 }
 
@@ -2086,7 +2189,7 @@ async function getCompanySettings(companyId) {
   if (!row) {
     const stamp = new Date().toISOString();
     await run(
-      'INSERT INTO settings (company_id, default_tax_rate, terms_conditions, created_at, updated_at) VALUES (?, 0, ?, ?, ?)',
+      'INSERT INTO settings (company_id, default_tax_rate, terms_conditions, include_revenue_in_balance, created_at, updated_at) VALUES (?, 0, ?, 0, ?, ?)',
       [cid, '', stamp, stamp]
     );
     row = await get('SELECT * FROM settings WHERE company_id = ?', [cid]);
@@ -2103,12 +2206,13 @@ async function updateCompanySettings(companyId, payload = {}) {
     throw new Error('Default tax rate must be between 0 and 100.');
   }
   const termsConditions = String(payload.termsConditions ?? existing.termsConditions ?? '').trim();
+  const includeRevenueInBalance = Boolean(payload.includeRevenueInBalance ?? existing.includeRevenueInBalance ?? false);
   const stamp = new Date().toISOString();
   await run(
     `UPDATE settings
-     SET default_tax_rate = ?, terms_conditions = ?, updated_at = ?
+     SET default_tax_rate = ?, terms_conditions = ?, include_revenue_in_balance = ?, updated_at = ?
      WHERE company_id = ?`,
-    [Number(defaultTaxRate.toFixed(4)), termsConditions, stamp, cid]
+    [Number(defaultTaxRate.toFixed(4)), termsConditions, includeRevenueInBalance ? 1 : 0, stamp, cid]
   );
   return getCompanySettings(cid);
 }
@@ -2335,8 +2439,8 @@ async function createInvoice(payload, companyId, createdBy = null) {
   if (exists) throw new Error('Invoice number already exists for this company.');
   const createdAt = new Date().toISOString();
   const res = await run(
-    `INSERT INTO invoices (company_id, customer_id, invoice_number, date, items, subtotal_amount, tax_percent, tax_amount, discount_amount, total_amount, amount_paid, balance, payment_status, type, status, validity_period, notes, created_by, last_payment_by, last_payment_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO invoices (company_id, customer_id, invoice_number, date, items, subtotal_amount, tax_percent, tax_amount, discount_amount, total_amount, revenue_amount, amount_paid, balance, payment_status, type, status, validity_period, notes, created_by, last_payment_by, last_payment_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       cid,
       customerId,
@@ -2347,6 +2451,7 @@ async function createInvoice(payload, companyId, createdBy = null) {
       taxPercent,
       taxAmount,
       discountAmount,
+      totalAmount,
       totalAmount,
       amountPaid,
       balance,
@@ -2826,6 +2931,8 @@ module.exports = {
   getExpenseReport,
   getIncomeReport,
   getCashflowReport,
+  getRevenueReport,
+  getCombinedFinancialReport,
   getStockMovements,
   adjustStock,
   getCustomerInsights,

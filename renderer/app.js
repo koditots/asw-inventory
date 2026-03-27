@@ -102,6 +102,8 @@ const apiFromIpc = ipcFallback ? {
   getExpenseReport: (payload) => ipcFallback.invoke('reports:getExpenses', payload),
   getIncomeReport: (payload) => ipcFallback.invoke('reports:getIncome', payload),
   getCashflowReport: (payload) => ipcFallback.invoke('reports:getCashflow', payload),
+  getRevenueReport: (payload) => ipcFallback.invoke('reports:getRevenue', payload),
+  getCombinedFinancialReport: (payload) => ipcFallback.invoke('reports:getCombinedFinancial', payload),
   getInventoryReport: () => ipcFallback.invoke('reports:getInventory'),
   getProfitLossReport: (payload) => ipcFallback.invoke('reports:getProfitLoss', payload),
   getStaffPerformanceReport: (payload) => ipcFallback.invoke('reports:getStaffPerformance', payload),
@@ -135,7 +137,7 @@ const state = {
   users: [],
   report: null,
   company: null,
-  invoiceSettings: { defaultTaxRate: 0, termsConditions: '' },
+  invoiceSettings: { defaultTaxRate: 0, termsConditions: '', includeRevenueInBalance: false },
   emailSettings: { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false },
   stream: null,
   clockIns: [],
@@ -188,6 +190,11 @@ const walletBalanceEl = $('walletBalance');
 const walletStatusText = $('walletStatusText');
 const walletInflowEl = $('walletInflow');
 const walletOutflowEl = $('walletOutflow');
+const dashboardRevenueEl = $('dashboardRevenue');
+const dashboardCashReceivedEl = $('dashboardCashReceived');
+const dashboardOutstandingRevenueEl = $('dashboardOutstandingRevenue');
+const dashboardProjectedBalanceWrap = $('dashboardProjectedBalanceWrap');
+const dashboardProjectedBalanceEl = $('dashboardProjectedBalance');
 const dashboardSalesChart = $('dashboardSalesChart');
 const dashboardChartEmpty = $('dashboardChartEmpty');
 const dashboardAdminSection = $('dashboardAdminSection');
@@ -311,6 +318,11 @@ const reportInvoicePaymentsBody = $('reportInvoicePaymentsBody');
 const reportTotalExpenses = $('reportTotalExpenses');
 const reportTotalExtraIncome = $('reportTotalExtraIncome');
 const reportNetCashflow = $('reportNetCashflow');
+const reportTotalEarnedRevenue = $('reportTotalEarnedRevenue');
+const reportTotalCashReceived = $('reportTotalCashReceived');
+const reportTotalOutstandingRevenue = $('reportTotalOutstandingRevenue');
+const reportCombinedNetProfit = $('reportCombinedNetProfit');
+const reportRevenueByCustomerBody = $('reportRevenueByCustomerBody');
 const reportExpenseByCategoryBody = $('reportExpenseByCategoryBody');
 const reportExpenseByVendorBody = $('reportExpenseByVendorBody');
 const reportIncomeByCategoryBody = $('reportIncomeByCategoryBody');
@@ -356,6 +368,7 @@ const restoreBtn = $('restoreBtn');
 const invoiceSettingsForm = $('invoiceSettingsForm');
 const settingsDefaultTaxRate = $('settingsDefaultTaxRate');
 const settingsTermsConditions = $('settingsTermsConditions');
+const settingsIncludeRevenueBalanceView = $('settingsIncludeRevenueBalanceView');
 const emailSettingsForm = $('emailSettingsForm');
 const emailSmtpHost = $('emailSmtpHost');
 const emailSmtpPort = $('emailSmtpPort');
@@ -985,6 +998,7 @@ function renderInvoiceSettings() {
   }
   settingsDefaultTaxRate.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
   settingsTermsConditions.value = state.invoiceSettings.termsConditions || '';
+  if (settingsIncludeRevenueBalanceView) settingsIncludeRevenueBalanceView.checked = Boolean(state.invoiceSettings.includeRevenueInBalance);
   if (emailSmtpHost) emailSmtpHost.value = state.emailSettings.smtpHost || '';
   if (emailSmtpPort) emailSmtpPort.value = String(Number(state.emailSettings.smtpPort || 587));
   if (emailSmtpUser) emailSmtpUser.value = state.emailSettings.smtpUser || '';
@@ -1274,6 +1288,11 @@ function renderDashboard(stats, salesReport = null) {
   if (walletBalanceEl) walletBalanceEl.textContent = currency(stats.walletBalance || 0);
   if (walletInflowEl) walletInflowEl.textContent = currency(stats.totalInflow || 0);
   if (walletOutflowEl) walletOutflowEl.textContent = currency(stats.totalOutflow || 0);
+  if (dashboardRevenueEl) dashboardRevenueEl.textContent = currency(stats.totalRevenue || 0);
+  if (dashboardCashReceivedEl) dashboardCashReceivedEl.textContent = currency(stats.totalCashReceived || 0);
+  if (dashboardOutstandingRevenueEl) dashboardOutstandingRevenueEl.textContent = currency(stats.outstandingRevenue || 0);
+  if (dashboardProjectedBalanceWrap) dashboardProjectedBalanceWrap.style.display = stats.includeRevenueInBalance ? '' : 'none';
+  if (dashboardProjectedBalanceEl) dashboardProjectedBalanceEl.textContent = currency(stats.projectedBalance || 0);
   if (walletStatusText) {
     const bal = Number(stats.walletBalance || 0);
     walletStatusText.textContent = bal >= 0 ? 'Positive' : 'Negative (Debt Warning)';
@@ -1379,7 +1398,7 @@ function renderCompany() {
   if (c.signaturePath) companySignaturePreview.src = fileUrl(c.signaturePath); else companySignaturePreview.removeAttribute('src');
 }
 
-function renderReport(report, expenseReport = null, incomeReport = null, cashflowReport = null) {
+function renderReport(report, expenseReport = null, incomeReport = null, cashflowReport = null, revenueReport = null, combinedReport = null) {
   state.report = report;
   exportReportBtn.disabled = false;
   reportRangeLabel.textContent = `${new Date(report.startDate).toLocaleString()} - ${new Date(report.endDate).toLocaleString()}`;
@@ -1408,6 +1427,15 @@ function renderReport(report, expenseReport = null, incomeReport = null, cashflo
   if (reportTotalExpenses) reportTotalExpenses.textContent = currency(expenseReport?.totalExpenses || 0);
   if (reportTotalExtraIncome) reportTotalExtraIncome.textContent = currency(incomeReport?.totalIncome || 0);
   if (reportNetCashflow) reportNetCashflow.textContent = currency(cashflowReport?.net || 0);
+  if (reportTotalEarnedRevenue) reportTotalEarnedRevenue.textContent = currency(revenueReport?.totalRevenue || 0);
+  if (reportTotalCashReceived) reportTotalCashReceived.textContent = currency(revenueReport?.totalCashReceived || 0);
+  if (reportTotalOutstandingRevenue) reportTotalOutstandingRevenue.textContent = currency(revenueReport?.outstandingRevenue || 0);
+  if (reportCombinedNetProfit) reportCombinedNetProfit.textContent = currency(combinedReport?.netProfit || 0);
+  if (reportRevenueByCustomerBody) {
+    const rows = Array.isArray(revenueReport?.byCustomer) ? revenueReport.byCustomer : [];
+    reportRevenueByCustomerBody.innerHTML = rows.length ? '' : '<tr><td colspan="5">No revenue by customer data.</td></tr>';
+    rows.forEach((r) => reportRevenueByCustomerBody.insertAdjacentHTML('beforeend', `<tr><td>${r.customerName}</td><td>${r.invoices}</td><td>${currency(r.totalRevenue || 0)}</td><td>${currency(r.totalCashReceived || 0)}</td><td>${currency(r.outstandingRevenue || 0)}</td></tr>`));
+  }
   if (reportExpenseByCategoryBody) {
     const rows = Array.isArray(expenseReport?.byCategory) ? expenseReport.byCategory : [];
     reportExpenseByCategoryBody.innerHTML = rows.length ? '' : '<tr><td colspan="2">No expense category data.</td></tr>';
@@ -1459,7 +1487,7 @@ async function refreshData() {
     can('income', 'view') ? api.getIncome({ limit: 200 }) : Promise.resolve([]),
     can('cashflow', 'view') ? api.getWallet() : Promise.resolve({ currentBalance: 0, lastUpdatedAt: '' }),
     can('cashflow', 'view') ? api.getCashflowTransactions({ limit: 300 }) : Promise.resolve([]),
-    can('dashboard', 'view') ? api.getDashboardStats() : Promise.resolve({ totalProducts: 0, totalSales: 0, totalTransactions: 0, lowStock: [], recentClockIns: [], periods: {}, topSellingProducts: [], staffClockInSummary: [], debtors: [], totalInflow: 0, totalOutflow: 0, walletBalance: 0, recentActivities: [] }),
+    can('dashboard', 'view') ? api.getDashboardStats() : Promise.resolve({ totalProducts: 0, totalSales: 0, totalTransactions: 0, lowStock: [], recentClockIns: [], periods: {}, topSellingProducts: [], staffClockInSummary: [], debtors: [], totalInflow: 0, totalOutflow: 0, walletBalance: 0, totalRevenue: 0, totalCashReceived: 0, outstandingRevenue: 0, includeRevenueInBalance: false, projectedBalance: 0, recentActivities: [] }),
     can('company', 'view') ? api.getActiveCompany() : Promise.resolve({}),
     can('invoices', 'view') ? api.getInvoices({ limit: 100 }) : Promise.resolve([]),
     can('dashboard', 'view') ? api.getRecentClockIns({ limit: 300, allCompanies: Boolean(state.session?.user?.isAdmin) }) : Promise.resolve([]),
@@ -1471,7 +1499,7 @@ async function refreshData() {
   const emailSettings = can('settings', 'edit')
     ? await api.getEmailSettings()
     : { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
-  state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.vendors = vendors; state.expenseCategories = expenseCategories; state.incomeCategories = incomeCategories; state.expenses = expenses; state.incomes = incomes; state.wallet = wallet || { currentBalance: 0, lastUpdatedAt: '' }; state.cashflowTransactions = transactions || []; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '' }; state.emailSettings = emailSettings || { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
+  state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.vendors = vendors; state.expenseCategories = expenseCategories; state.incomeCategories = incomeCategories; state.expenses = expenses; state.incomes = incomes; state.wallet = wallet || { currentBalance: 0, lastUpdatedAt: '' }; state.cashflowTransactions = transactions || []; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '', includeRevenueInBalance: false }; state.emailSettings = emailSettings || { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
   state.roles = can('roles', 'view') ? await api.getRoles() : [];
   state.users = can('users', 'view') ? await api.getUsers() : [];
   if (!state.invoiceDraft.invoiceNumber) await refreshInvoiceNumber();
@@ -2051,13 +2079,15 @@ restartInstallBtn?.addEventListener('click', async () => {
 generateReportBtn.addEventListener('click', async () => {
   try {
     const period = reportPeriod.value;
-    const [salesReport, expenseReport, incomeReport, cashflowReport] = await Promise.all([
+    const [salesReport, expenseReport, incomeReport, cashflowReport, revenueReport, combinedReport] = await Promise.all([
       api.getSalesReport({ period, paymentStatus: reportPaymentStatus?.value || 'all' }),
       api.getExpenseReport({ period }),
       api.getIncomeReport({ period }),
-      api.getCashflowReport({ period })
+      api.getCashflowReport({ period }),
+      api.getRevenueReport({ period }),
+      api.getCombinedFinancialReport({ period })
     ]);
-    renderReport(salesReport, expenseReport, incomeReport, cashflowReport);
+    renderReport(salesReport, expenseReport, incomeReport, cashflowReport, revenueReport, combinedReport);
     showStatus('Report generated.');
   } catch (err) {
     showStatus(err.message || 'Report failed.', 'error');
@@ -2100,7 +2130,8 @@ invoiceSettingsForm.addEventListener('submit', async (e) => {
     const defaultTaxRate = Number(settingsDefaultTaxRate.value || 0);
     if (!Number.isFinite(defaultTaxRate) || defaultTaxRate < 0 || defaultTaxRate > 100) throw new Error('Default tax rate must be between 0 and 100.');
     const termsConditions = String(settingsTermsConditions.value || '').trim();
-    state.invoiceSettings = await api.updateInvoiceSettings({ defaultTaxRate, termsConditions });
+    const includeRevenueInBalance = Boolean(settingsIncludeRevenueBalanceView?.checked);
+    state.invoiceSettings = await api.updateInvoiceSettings({ defaultTaxRate, termsConditions, includeRevenueInBalance });
     if (state.invoiceDraft.useDefaultTax) {
       invoiceTaxPercent.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
       state.invoiceDraft.taxPercent = Number(state.invoiceSettings.defaultTaxRate || 0);

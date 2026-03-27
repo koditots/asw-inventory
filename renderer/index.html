@@ -140,6 +140,12 @@
           <div class="col-lg-4"><article class="metric-card"><p>Total Inflow</p><h3 id="walletInflow">$0.00</h3></article></div>
           <div class="col-lg-4"><article class="metric-card"><p>Total Outflow</p><h3 id="walletOutflow">$0.00</h3></article></div>
         </div>
+        <div class="row g-3 mb-3">
+          <div class="col-lg-4"><article class="metric-card"><p>Revenue (Earned)</p><h3 id="dashboardRevenue">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Cash Received</p><h3 id="dashboardCashReceived">$0.00</h3></article></div>
+          <div class="col-lg-4"><article class="metric-card"><p>Outstanding Revenue</p><h3 id="dashboardOutstandingRevenue">$0.00</h3></article></div>
+          <div class="col-lg-4" id="dashboardProjectedBalanceWrap" style="display:none;"><article class="metric-card"><p>Projected Balance</p><h3 id="dashboardProjectedBalance">$0.00</h3></article></div>
+        </div>
 
         <article class="panel-card">
           <div class="panel-title">Stock Alerts (Below Minimum)</div>
@@ -868,6 +874,12 @@
           <div class="col-lg-4"><article class="metric-card"><p>Net Cashflow</p><h3 id="reportNetCashflow">$0.00</h3></article></div>
         </div>
         <div class="row g-3 mt-1">
+          <div class="col-lg-3"><article class="metric-card"><p>Earned Revenue</p><h3 id="reportTotalEarnedRevenue">$0.00</h3></article></div>
+          <div class="col-lg-3"><article class="metric-card"><p>Cash Received</p><h3 id="reportTotalCashReceived">$0.00</h3></article></div>
+          <div class="col-lg-3"><article class="metric-card"><p>Outstanding Revenue</p><h3 id="reportTotalOutstandingRevenue">$0.00</h3></article></div>
+          <div class="col-lg-3"><article class="metric-card"><p>Net Profit</p><h3 id="reportCombinedNetProfit">$0.00</h3></article></div>
+        </div>
+        <div class="row g-3 mt-1">
           <div class="col-lg-6">
             <article class="panel-card">
               <div class="panel-title">Expenses By Category</div>
@@ -897,6 +909,15 @@
             <table class="table table-sm table-hover align-middle mb-0">
               <thead><tr><th>Category</th><th>Total</th></tr></thead>
               <tbody id="reportIncomeByCategoryBody"></tbody>
+            </table>
+          </div>
+        </article>
+        <article class="panel-card mt-3">
+          <div class="panel-title">Revenue By Customer</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead><tr><th>Customer</th><th>Invoices</th><th>Revenue</th><th>Cash Received</th><th>Outstanding</th></tr></thead>
+              <tbody id="reportRevenueByCustomerBody"></tbody>
             </table>
           </div>
         </article>
@@ -1092,6 +1113,12 @@
                 <div class="col-12">
                   <label class="form-label" for="settingsTermsConditions">Terms & Conditions</label>
                   <textarea id="settingsTermsConditions" class="form-control" rows="6" placeholder="Enter terms & conditions applied to invoices, performa invoices, and quotes."></textarea>
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input id="settingsIncludeRevenueBalanceView" class="form-check-input" type="checkbox" />
+                    <label class="form-check-label" for="settingsIncludeRevenueBalanceView">Include outstanding revenue in projected balance view</label>
+                  </div>
                 </div>
                 <div class="col-12 mt-2">
                   <button type="submit" class="btn btn-dark">Save Invoice Settings</button>

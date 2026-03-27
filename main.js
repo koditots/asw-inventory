@@ -1324,6 +1324,16 @@ function registerIpcHandlers() {
     requirePermission('reports', 'view');
     return db.getCashflowReport(getActiveCompanyId(), payload?.period || 'monthly');
   });
+  ipcMain.handle('reports:getRevenue', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('reports', 'view');
+    return db.getRevenueReport(getActiveCompanyId(), payload?.period || 'monthly');
+  });
+  ipcMain.handle('reports:getCombinedFinancial', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('reports', 'view');
+    return db.getCombinedFinancialReport(getActiveCompanyId(), payload?.period || 'monthly');
+  });
   ipcMain.handle('reports:getProfitLoss', async (_event, payload) => {
     requireClockIn();
     requirePermission('reports', 'view');
