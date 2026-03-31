@@ -1278,7 +1278,38 @@ function drawDashboardSalesChart(periods = {}) {
   if (dashboardChartEmpty) dashboardChartEmpty.textContent = hasData ? '' : 'No sales data yet for chart.';
 }
 
+const dashboardMetricIcons = {
+  totalProducts: navSvgs.products,
+  totalSales: navSvgs.invoices,
+  totalTransactions: navSvgs.cashflow,
+  dailyRevenue: navSvgs.income,
+  weeklyRevenue: navSvgs.income,
+  monthlyRevenue: navSvgs.income,
+  walletBalance: navSvgs.company,
+  walletInflow: navSvgs.cashflow,
+  walletOutflow: navSvgs.expenses,
+  dashboardRevenue: navSvgs.reports,
+  dashboardCashReceived: navSvgs.income,
+  dashboardOutstandingRevenue: navSvgs.customers,
+  dashboardProjectedBalance: navSvgs.reports
+};
+
+function ensureDashboardMetricIcons() {
+  Object.entries(dashboardMetricIcons).forEach(([statId, iconSvg]) => {
+    const statEl = $(statId);
+    if (!statEl) return;
+    const card = statEl.closest('.metric-card');
+    if (!card) return;
+    if (card.querySelector('.metric-card-icon')) return;
+    const iconEl = document.createElement('div');
+    iconEl.className = 'metric-card-icon';
+    iconEl.innerHTML = iconSvg;
+    card.insertBefore(iconEl, card.firstChild);
+  });
+}
+
 function renderDashboard(stats, salesReport = null) {
+  ensureDashboardMetricIcons();
   totalProductsEl.textContent = String(stats.totalProducts || 0);
   totalSalesEl.textContent = currency(stats.totalSales || 0);
   totalTransactionsEl.textContent = String(stats.totalTransactions || 0);
