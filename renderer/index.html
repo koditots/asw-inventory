@@ -24,6 +24,12 @@
         <button class="nav-link" data-section="categories"><span class="nav-icon" data-icon="categories"></span><span>Categories</span></button>
         <button class="nav-link" data-section="suppliers"><span class="nav-icon" data-icon="suppliers"></span><span>Suppliers</span></button>
         <button class="nav-link" data-section="customers"><span class="nav-icon" data-icon="customers"></span><span>Customers</span></button>
+        <button class="nav-link" data-section="pos"><span class="nav-icon" data-icon="sales"></span><span>POS</span></button>
+        <button class="nav-link" data-section="bookings"><span class="nav-icon" data-icon="company"></span><span>Bookings</span></button>
+        <button class="nav-link" data-section="rooms"><span class="nav-icon" data-icon="company"></span><span>Rooms</span></button>
+        <button class="nav-link" data-section="guests"><span class="nav-icon" data-icon="customers"></span><span>Guests</span></button>
+        <button class="nav-link" data-section="patients"><span class="nav-icon" data-icon="customers"></span><span>Patients</span></button>
+        <button class="nav-link" data-section="drugexpiry"><span class="nav-icon" data-icon="reports"></span><span>Expiry Tracking</span></button>
         <button class="nav-link" data-section="invoices"><span class="nav-icon" data-icon="invoices"></span><span>Invoices</span></button>
         <button class="nav-link" data-section="expenses"><span class="nav-icon" data-icon="reports"></span><span>Expenses</span></button>
         <button class="nav-link" data-section="vendors"><span class="nav-icon" data-icon="suppliers"></span><span>Vendors</span></button>
@@ -968,6 +974,15 @@
                   <input id="companyPrimaryColor" class="form-control form-control-color w-100" type="color" value="#f4c214" />
                 </div>
                 <div class="col-md-6">
+                  <label class="form-label" for="companyIndustryType">Industry Type</label>
+                  <select id="companyIndustryType" class="form-select">
+                    <option value="general">General</option>
+                    <option value="retail">Retail</option>
+                    <option value="hospitality">Hospitality</option>
+                    <option value="medical">Medical</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
                   <label class="form-label" for="companyBankName">Bank Name</label>
                   <input id="companyBankName" class="form-control" type="text" maxlength="120" />
                 </div>
@@ -1163,7 +1178,35 @@
               <div class="d-flex gap-2">
                 <button id="backupBtn" class="btn btn-outline-primary">Backup Database</button>
                 <button id="restoreBtn" class="btn btn-outline-warning">Restore Database</button>
+                <button id="autoBackupNowBtn" class="btn btn-outline-dark">Run Auto Backup</button>
               </div>
+            </article>
+            <article class="panel-card mt-3">
+              <div class="panel-title">System Configuration (Admin)</div>
+              <form id="systemConfigForm" class="row g-2" novalidate>
+                <div class="col-md-6">
+                  <label class="form-label" for="systemIndustryType">Industry Type</label>
+                  <select id="systemIndustryType" class="form-select">
+                    <option value="general">General</option>
+                    <option value="retail">Retail</option>
+                    <option value="hospitality">Hospitality</option>
+                    <option value="medical">Medical</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="systemEnabledModules">Enabled Modules (comma-separated)</label>
+                  <input id="systemEnabledModules" class="form-control" type="text" placeholder="core,retail" />
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input id="systemSyncEnabled" class="form-check-input" type="checkbox" />
+                    <label class="form-check-label" for="systemSyncEnabled">Enable Sync Foundation Flag</label>
+                  </div>
+                </div>
+                <div class="col-12 mt-2">
+                  <button type="submit" class="btn btn-dark">Save System Configuration</button>
+                </div>
+              </form>
             </article>
           </div>
 
@@ -1207,6 +1250,90 @@
             </article>
           </div>
         </div>
+      </section>
+
+      <section id="section-pos" class="app-section">
+        <article class="panel-card">
+          <div class="panel-title">Retail POS Mode</div>
+          <div class="d-flex gap-2 mb-2">
+            <button id="posToggleBtn" class="btn btn-outline-dark">Enable POS Mode</button>
+          </div>
+          <form id="posForm" class="row g-2" novalidate>
+            <div class="col-md-6">
+              <label class="form-label" for="posProductId">Product</label>
+              <select id="posProductId" class="form-select"></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="posQty">Qty</label>
+              <input id="posQty" class="form-control" type="number" min="1" value="1" />
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+              <button type="submit" class="btn btn-success w-100">Fast Checkout</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section id="section-rooms" class="app-section">
+        <article class="panel-card">
+          <div class="panel-title">Rooms</div>
+          <form id="roomForm" class="row g-2 mb-3" novalidate>
+            <div class="col-md-4"><input id="roomNumber" class="form-control" type="text" placeholder="Room Number" /></div>
+            <div class="col-md-4"><input id="roomType" class="form-control" type="text" placeholder="Room Type" /></div>
+            <div class="col-md-2"><input id="roomRate" class="form-control" type="number" min="0" step="0.01" placeholder="Rate" /></div>
+            <div class="col-md-2"><button type="submit" class="btn btn-dark w-100">Add Room</button></div>
+          </form>
+          <div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Room</th><th>Type</th><th>Rate</th><th>Status</th></tr></thead><tbody id="roomsTableBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="section-guests" class="app-section">
+        <article class="panel-card">
+          <div class="panel-title">Guests</div>
+          <form id="guestForm" class="row g-2 mb-3" novalidate>
+            <div class="col-md-4"><input id="guestName" class="form-control" type="text" placeholder="Guest Name" /></div>
+            <div class="col-md-3"><input id="guestPhone" class="form-control" type="text" placeholder="Phone" /></div>
+            <div class="col-md-3"><input id="guestEmail" class="form-control" type="email" placeholder="Email" /></div>
+            <div class="col-md-2"><button type="submit" class="btn btn-dark w-100">Add Guest</button></div>
+            <div class="col-12"><textarea id="guestNotes" class="form-control" rows="2" placeholder="Notes"></textarea></div>
+          </form>
+          <div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th></tr></thead><tbody id="guestsTableBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="section-bookings" class="app-section">
+        <article class="panel-card">
+          <div class="panel-title">Bookings</div>
+          <form id="bookingForm" class="row g-2 mb-3" novalidate>
+            <div class="col-md-3"><label class="form-label" for="bookingRoomId">Room</label><select id="bookingRoomId" class="form-select"></select></div>
+            <div class="col-md-3"><label class="form-label" for="bookingGuestId">Guest</label><select id="bookingGuestId" class="form-select"></select></div>
+            <div class="col-md-2"><label class="form-label" for="bookingCheckInDate">Check In</label><input id="bookingCheckInDate" class="form-control" type="date" /></div>
+            <div class="col-md-2"><label class="form-label" for="bookingCheckOutDate">Check Out</label><input id="bookingCheckOutDate" class="form-control" type="date" /></div>
+            <div class="col-md-2 d-flex align-items-end"><button type="submit" class="btn btn-dark w-100">Book Room</button></div>
+            <div class="col-12"><textarea id="bookingNotes" class="form-control" rows="2" placeholder="Booking notes"></textarea></div>
+          </form>
+          <div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Room</th><th>Guest</th><th>Check In</th><th>Check Out</th><th>Status</th><th>Actions</th></tr></thead><tbody id="bookingsTableBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="section-patients" class="app-section">
+        <article class="panel-card">
+          <div class="panel-title">Patients</div>
+          <form id="patientForm" class="row g-2 mb-3" novalidate>
+            <div class="col-md-4"><input id="patientName" class="form-control" type="text" placeholder="Patient Name" /></div>
+            <div class="col-md-3"><input id="patientPhone" class="form-control" type="text" placeholder="Phone" /></div>
+            <div class="col-md-3"><input id="patientNotes" class="form-control" type="text" placeholder="Notes" /></div>
+            <div class="col-md-2"><button type="submit" class="btn btn-dark w-100">Add Patient</button></div>
+          </form>
+          <div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Name</th><th>Phone</th><th>Notes</th></tr></thead><tbody id="patientsTableBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="section-drugexpiry" class="app-section">
+        <article class="panel-card">
+          <div class="panel-title">Drug Expiry Tracking</div>
+          <div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Product</th><th>Batch</th><th>Expiry Date</th><th>Qty</th></tr></thead><tbody id="drugExpiryTableBody"></tbody></table></div>
+        </article>
       </section>
 
       <div id="updateBanner" class="update-banner" hidden>

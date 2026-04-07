@@ -99,6 +99,9 @@ const inventoryApi = {
 
   getInvoiceSettings: () => ipcRenderer.invoke('settings:get'),
   updateInvoiceSettings: (payload) => ipcRenderer.invoke('settings:update', payload),
+  getIndustryModuleConfig: () => ipcRenderer.invoke('modules:getConfig'),
+  getSystemConfiguration: () => ipcRenderer.invoke('system:getConfiguration'),
+  updateSystemConfiguration: (payload) => ipcRenderer.invoke('system:updateConfiguration', payload),
   getEmailSettings: () => ipcRenderer.invoke('email:settings:get'),
   saveEmailSettings: (payload) => ipcRenderer.invoke('email:settings:update', payload),
   testEmailConnection: (payload) => ipcRenderer.invoke('email:testConnection', payload),
@@ -122,9 +125,21 @@ const inventoryApi = {
   getCustomerInsights: (payload) => ipcRenderer.invoke('customers:getInsights', payload),
   getStockMovements: (payload) => ipcRenderer.invoke('stock:getMovements', payload),
   adjustStock: (payload) => ipcRenderer.invoke('stock:adjust', payload),
+  getRooms: () => ipcRenderer.invoke('rooms:getAll'),
+  createRoom: (payload) => ipcRenderer.invoke('rooms:create', payload),
+  getGuests: () => ipcRenderer.invoke('guests:getAll'),
+  createGuest: (payload) => ipcRenderer.invoke('guests:create', payload),
+  getBookings: () => ipcRenderer.invoke('bookings:getAll'),
+  createBooking: (payload) => ipcRenderer.invoke('bookings:create', payload),
+  updateBookingStatus: (payload) => ipcRenderer.invoke('bookings:updateStatus', payload),
+  getPatients: () => ipcRenderer.invoke('patients:getAll'),
+  createPatient: (payload) => ipcRenderer.invoke('patients:create', payload),
+  getDrugExpiry: (payload) => ipcRenderer.invoke('drugExpiry:getAll', payload),
+  getInsights: (payload) => ipcRenderer.invoke('insights:getAll', payload),
 
   backupDatabase: () => ipcRenderer.invoke('database:backup'),
-  restoreDatabase: () => ipcRenderer.invoke('database:restore')
+  restoreDatabase: () => ipcRenderer.invoke('database:restore'),
+  runAutoBackupNow: () => ipcRenderer.invoke('database:autoBackupNow')
 };
 
 contextBridge.exposeInMainWorld('inventoryApi', inventoryApi);

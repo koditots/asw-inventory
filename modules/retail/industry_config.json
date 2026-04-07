@@ -1,0 +1,24 @@
+{
+  "industry": "retail",
+  "visibleSidebarItems": [
+    "dashboard",
+    "products",
+    "customers",
+    "invoices",
+    "reports",
+    "settings",
+    "pos"
+  ],
+  "enabledFeatures": {
+    "posMode": true,
+    "fastCheckout": true,
+    "hospitality": false,
+    "medical": false
+  },
+  "labelMap": {
+    "products": "Inventory",
+    "customers": "Customers",
+    "reports": "Reports",
+    "pos": "POS"
+  }
+}

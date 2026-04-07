@@ -75,7 +75,10 @@ let activeSession = null;
 const UPDATE_STATUS_CHANNEL = 'updater:status';
 let currentUpdateState = { state: 'idle', message: 'Updater idle.', progress: null, updateReady: false };
 let emailQueueTimer = null;
+let autoBackupTimer = null;
 const DEV_UPDATE_CONFIG_NAME = 'dev-app-update.yml';
+const INDUSTRY_TYPES = ['retail', 'hospitality', 'medical', 'general'];
+const DEFAULT_INDUSTRY = 'general';
 
 function sendUpdateStatus(partial = {}) {
   currentUpdateState = { ...currentUpdateState, ...partial };
@@ -331,6 +334,15 @@ function startEmailQueueWorker() {
   }, 60 * 1000);
 }
 
+function startAutoBackupWorker() {
+  if (autoBackupTimer) clearInterval(autoBackupTimer);
+  autoBackupTimer = setInterval(() => {
+    runAutoBackupIfDue().catch((error) => {
+      console.error('Auto backup worker failed:', error);
+    });
+  }, 60 * 60 * 1000);
+}
+
 function configureAutoUpdater() {
   // Allow local updater checks when running unpackaged, if dev-app-update.yml is present.
   if (!app.isPackaged) {
@@ -549,6 +561,48 @@ function safeHexColor(color, fallback = '#f4c214') {
   return /^#[0-9a-fA-F]{6}$/.test(String(color || '').trim()) ? String(color).trim() : fallback;
 }
 
+function normalizeIndustryType(industryType) {
+  const normalized = String(industryType || '').trim().toLowerCase();
+  return INDUSTRY_TYPES.includes(normalized) ? normalized : DEFAULT_INDUSTRY;
+}
+
+function deepMerge(left = {}, right = {}) {
+  const output = { ...(left || {}) };
+  for (const [key, value] of Object.entries(right || {})) {
+    if (Array.isArray(value)) output[key] = value.slice();
+    else if (value && typeof value === 'object') output[key] = deepMerge(output[key] || {}, value);
+    else output[key] = value;
+  }
+  return output;
+}
+
+function readIndustryConfigFile(name) {
+  const filePath = path.join(__dirname, 'modules', name, 'industry_config.json');
+  if (!fs.existsSync(filePath)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function resolveIndustryConfig(industryType = DEFAULT_INDUSTRY, settings = {}) {
+  const industry = normalizeIndustryType(industryType);
+  const base = readIndustryConfigFile('core');
+  const extension = readIndustryConfigFile(industry === 'general' ? 'core' : industry);
+  const merged = deepMerge(base, extension);
+  const enabledModules = Array.isArray(settings?.enabledModules) ? settings.enabledModules : ['core'];
+  const featureToggles = settings?.featureToggles && typeof settings.featureToggles === 'object' ? settings.featureToggles : {};
+  const syncEnabled = Boolean(settings?.syncEnabled);
+  return {
+    industry,
+    visibleSidebarItems: Array.isArray(merged.visibleSidebarItems) ? merged.visibleSidebarItems : [],
+    enabledFeatures: { ...(merged.enabledFeatures || {}), ...featureToggles, sync: syncEnabled },
+    labelMap: merged.labelMap || {},
+    enabledModules
+  };
+}
+
 async function generateInvoicePdf(invoice, company, settings, destinationPath) {
   const html = buildInvoiceTemplateHtml({ invoice, company: { ...company, primaryColor: safeHexColor(company?.primaryColor, '#f4c214') }, settings });
   const win = new BrowserWindow({
@@ -588,6 +642,32 @@ function getUserProfileDirectory() {
   const profileDir = path.join(baseDir, 'user_profiles');
   if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
   return profileDir;
+}
+
+function getAutoBackupDirectory() {
+  const sourceDbPath = db.getDatabasePath();
+  const baseDir = sourceDbPath ? path.dirname(sourceDbPath) : app.getPath('userData');
+  const backupDir = path.join(baseDir, 'auto_backups');
+  if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+  return backupDir;
+}
+
+async function runAutoBackupIfDue() {
+  const sourcePath = db.getDatabasePath();
+  if (!sourcePath || !fs.existsSync(sourcePath)) return { skipped: 'missing-db' };
+  const now = new Date();
+  const companies = await db.getAllCompanies();
+  for (const company of companies) {
+    const settings = await db.getCompanySettings(company.id);
+    if (!settings.syncEnabled) continue;
+    const last = settings.lastAutoBackupAt ? new Date(settings.lastAutoBackupAt) : null;
+    if (last && !Number.isNaN(last.getTime()) && (now.getTime() - last.getTime()) < 24 * 60 * 60 * 1000) continue;
+    const stamp = now.toISOString().replace(/[:.]/g, '-');
+    const target = path.join(getAutoBackupDirectory(), `company-${company.id}-auto-${stamp}.db`);
+    fs.copyFileSync(sourcePath, target);
+    await db.updateCompanySettings(company.id, { lastAutoBackupAt: now.toISOString() });
+  }
+  return { ok: true };
 }
 
 async function pickAndStoreCompanyAsset(title, targetPrefix) {
@@ -902,6 +982,47 @@ function registerIpcHandlers() {
     return db.updateCompanySettings(getActiveCompanyId(), payload || {});
   });
 
+  ipcMain.handle('modules:getConfig', async () => {
+    requireLogin();
+    const company = await db.getCompanyById(getActiveCompanyId());
+    const settings = await db.getCompanySettings(getActiveCompanyId());
+    return resolveIndustryConfig(company?.industryType || DEFAULT_INDUSTRY, settings || {});
+  });
+
+  ipcMain.handle('system:getConfiguration', async () => {
+    requireClockIn();
+    requirePermission('settings', 'view');
+    const company = await db.getCompanyById(getActiveCompanyId());
+    const settings = await db.getCompanySettings(getActiveCompanyId());
+    return {
+      companyId: company?.id,
+      industryType: normalizeIndustryType(company?.industryType),
+      syncEnabled: Boolean(settings?.syncEnabled),
+      enabledModules: settings?.enabledModules || ['core'],
+      featureToggles: settings?.featureToggles || {},
+      moduleConfig: resolveIndustryConfig(company?.industryType, settings)
+    };
+  });
+
+  ipcMain.handle('system:updateConfiguration', async (_event, payload) => {
+    ensureAdmin();
+    const activeCompanyId = getActiveCompanyId();
+    const nextIndustry = normalizeIndustryType(payload?.industryType);
+    const currentSettings = await db.getCompanySettings(activeCompanyId);
+    await db.updateCompany(activeCompanyId, { industryType: nextIndustry });
+    const updatedSettings = await db.updateCompanySettings(activeCompanyId, {
+      ...currentSettings,
+      syncEnabled: payload?.syncEnabled ?? currentSettings.syncEnabled,
+      enabledModules: payload?.enabledModules ?? currentSettings.enabledModules,
+      featureToggles: payload?.featureToggles ?? currentSettings.featureToggles
+    });
+    return {
+      company: await db.getCompanyById(activeCompanyId),
+      settings: updatedSettings,
+      moduleConfig: resolveIndustryConfig(nextIndustry, updatedSettings)
+    };
+  });
+
   ipcMain.handle('users:getAll', async () => {
     requirePermission('users', 'view');
     return db.getUsers();
@@ -1065,6 +1186,61 @@ function registerIpcHandlers() {
     requireClockIn();
     requirePermission('income', 'create');
     return db.createAdditionalIncome(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+  });
+
+  ipcMain.handle('rooms:getAll', async () => {
+    requireClockIn();
+    requirePermission('company', 'view');
+    return db.getRooms(getActiveCompanyId());
+  });
+  ipcMain.handle('rooms:create', async (_event, payload) => {
+    ensureAdmin();
+    return db.createRoom(payload || {}, getActiveCompanyId());
+  });
+  ipcMain.handle('guests:getAll', async () => {
+    requireClockIn();
+    requirePermission('customers', 'view');
+    return db.getGuests(getActiveCompanyId());
+  });
+  ipcMain.handle('guests:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('customers', 'create');
+    return db.createGuest(payload || {}, getActiveCompanyId());
+  });
+  ipcMain.handle('bookings:getAll', async () => {
+    requireClockIn();
+    requirePermission('company', 'view');
+    return db.getBookings(getActiveCompanyId());
+  });
+  ipcMain.handle('bookings:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('company', 'create');
+    return db.createBooking(payload || {}, getActiveCompanyId(), activeSession?.user?.id);
+  });
+  ipcMain.handle('bookings:updateStatus', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('company', 'edit');
+    return db.updateBookingStatus(payload || {}, getActiveCompanyId());
+  });
+  ipcMain.handle('patients:getAll', async () => {
+    requireClockIn();
+    requirePermission('customers', 'view');
+    return db.getPatients(getActiveCompanyId());
+  });
+  ipcMain.handle('patients:create', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('customers', 'create');
+    return db.createPatient(payload || {}, getActiveCompanyId());
+  });
+  ipcMain.handle('drugExpiry:getAll', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('products', 'view');
+    return db.getDrugExpiry(getActiveCompanyId(), payload?.daysAhead || 30);
+  });
+  ipcMain.handle('insights:getAll', async (_event, payload) => {
+    requireClockIn();
+    requirePermission('reports', 'view');
+    return db.getInsightLogs(getActiveCompanyId(), payload?.limit || 100);
   });
 
   ipcMain.handle('cashflow:transactions:getAll', async (_event, payload) => {
@@ -1383,6 +1559,10 @@ function registerIpcHandlers() {
     await db.restoreDatabase(selected.filePaths[0]);
     return { cancelled: false, restoredFrom: selected.filePaths[0] };
   });
+  ipcMain.handle('database:autoBackupNow', async () => {
+    ensureAdmin();
+    return runAutoBackupIfDue();
+  });
 }
 
 async function bootstrap() {
@@ -1393,7 +1573,9 @@ async function bootstrap() {
   configureAutoUpdater();
   createWindow();
   startEmailQueueWorker();
+  startAutoBackupWorker();
   processQueuedEmails(12).catch(() => {});
+  runAutoBackupIfDue().catch(() => {});
   await checkForUpdatesIfOnline('startup');
 }
 
@@ -1414,6 +1596,10 @@ app.on('before-quit', async () => {
   if (emailQueueTimer) {
     clearInterval(emailQueueTimer);
     emailQueueTimer = null;
+  }
+  if (autoBackupTimer) {
+    clearInterval(autoBackupTimer);
+    autoBackupTimer = null;
   }
   try {
     await db.closeDatabase();

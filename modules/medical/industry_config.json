@@ -1,0 +1,25 @@
+{
+  "industry": "medical",
+  "visibleSidebarItems": [
+    "dashboard",
+    "products",
+    "patients",
+    "drugexpiry",
+    "invoices",
+    "reports",
+    "settings"
+  ],
+  "enabledFeatures": {
+    "medical": true,
+    "patients": true,
+    "drugExpiry": true,
+    "prescriptions": false
+  },
+  "labelMap": {
+    "products": "Drug Inventory",
+    "customers": "Patients",
+    "patients": "Patients",
+    "drugexpiry": "Expiry Tracking",
+    "reports": "Clinical Reports"
+  }
+}

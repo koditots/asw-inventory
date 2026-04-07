@@ -1,0 +1,33 @@
+{
+  "industry": "core",
+  "visibleSidebarItems": [
+    "dashboard",
+    "products",
+    "categories",
+    "suppliers",
+    "customers",
+    "invoices",
+    "expenses",
+    "vendors",
+    "income",
+    "cashflow",
+    "clockin",
+    "reports",
+    "company",
+    "users",
+    "roles",
+    "settings"
+  ],
+  "enabledFeatures": {
+    "posMode": false,
+    "hospitality": false,
+    "medical": false,
+    "sync": false,
+    "aiInsights": true
+  },
+  "labelMap": {
+    "products": "Products",
+    "customers": "Customers",
+    "reports": "Sales Reports"
+  }
+}

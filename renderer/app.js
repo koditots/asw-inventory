@@ -92,6 +92,9 @@ const apiFromIpc = ipcFallback ? {
   renderInvoiceTemplate: (payload) => ipcFallback.invoke('invoices:renderTemplate', payload),
   getInvoiceSettings: () => ipcFallback.invoke('settings:get'),
   updateInvoiceSettings: (payload) => ipcFallback.invoke('settings:update', payload),
+  getIndustryModuleConfig: () => ipcFallback.invoke('modules:getConfig'),
+  getSystemConfiguration: () => ipcFallback.invoke('system:getConfiguration'),
+  updateSystemConfiguration: (payload) => ipcFallback.invoke('system:updateConfiguration', payload),
   getEmailSettings: () => ipcFallback.invoke('email:settings:get'),
   saveEmailSettings: (payload) => ipcFallback.invoke('email:settings:update', payload),
   testEmailConnection: (payload) => ipcFallback.invoke('email:testConnection', payload),
@@ -112,8 +115,20 @@ const apiFromIpc = ipcFallback ? {
   getCustomerInsights: (payload) => ipcFallback.invoke('customers:getInsights', payload),
   getStockMovements: (payload) => ipcFallback.invoke('stock:getMovements', payload),
   adjustStock: (payload) => ipcFallback.invoke('stock:adjust', payload),
+  getRooms: () => ipcFallback.invoke('rooms:getAll'),
+  createRoom: (payload) => ipcFallback.invoke('rooms:create', payload),
+  getGuests: () => ipcFallback.invoke('guests:getAll'),
+  createGuest: (payload) => ipcFallback.invoke('guests:create', payload),
+  getBookings: () => ipcFallback.invoke('bookings:getAll'),
+  createBooking: (payload) => ipcFallback.invoke('bookings:create', payload),
+  updateBookingStatus: (payload) => ipcFallback.invoke('bookings:updateStatus', payload),
+  getPatients: () => ipcFallback.invoke('patients:getAll'),
+  createPatient: (payload) => ipcFallback.invoke('patients:create', payload),
+  getDrugExpiry: (payload) => ipcFallback.invoke('drugExpiry:getAll', payload),
+  getInsights: (payload) => ipcFallback.invoke('insights:getAll', payload),
   backupDatabase: () => ipcFallback.invoke('database:backup'),
-  restoreDatabase: () => ipcFallback.invoke('database:restore')
+  restoreDatabase: () => ipcFallback.invoke('database:restore'),
+  runAutoBackupNow: () => ipcFallback.invoke('database:autoBackupNow')
 } : null;
 
 const api = window.inventoryApi || window.api || apiFromIpc || {};
@@ -142,12 +157,22 @@ const state = {
   stream: null,
   clockIns: [],
   dashboardSalesReport: null,
+  moduleConfig: { industry: 'general', visibleSidebarItems: [], enabledFeatures: {}, labelMap: {}, enabledModules: ['core'] },
+  systemConfig: { industryType: 'general', syncEnabled: false, enabledModules: ['core'], featureToggles: {} },
+  rooms: [],
+  guests: [],
+  bookings: [],
+  patients: [],
+  drugExpiry: [],
+  insights: [],
+  posMode: false,
   invoices: [],
   invoiceDraft: { type: 'invoice', status: 'draft', date: '', invoiceNumber: '', customerId: '', taxPercent: 0, useDefaultTax: true, discountAmount: 0, amountPaid: 0, validityPeriod: '', notes: '', items: [] }
 };
 
 const sectionTitle = $('sectionTitle');
 const sectionButtons = Array.from(document.querySelectorAll('.section-nav .nav-link'));
+const defaultSidebarLabels = new Map(sectionButtons.map((btn) => [btn.dataset.section, btn.querySelector('span:last-child')?.textContent || btn.dataset.section]));
 const sections = Array.from(document.querySelectorAll('.app-section'));
 const proMenu = $('proMenu');
 const statusMessageEl = $('statusMessage');
@@ -338,6 +363,7 @@ const companyBankName = $('companyBankName');
 const companyAccountNumber = $('companyAccountNumber');
 const companyPaymentMethods = $('companyPaymentMethods');
 const companyPrimaryColor = $('companyPrimaryColor');
+const companyIndustryType = $('companyIndustryType');
 const companyLogoPath = $('companyLogoPath');
 const companySignaturePath = $('companySignaturePath');
 const companyLogoPreview = $('companyLogoPreview');
@@ -365,6 +391,11 @@ const rolesTableBody = $('rolesTableBody');
 
 const backupBtn = $('backupBtn');
 const restoreBtn = $('restoreBtn');
+const autoBackupNowBtn = $('autoBackupNowBtn');
+const systemConfigForm = $('systemConfigForm');
+const systemIndustryType = $('systemIndustryType');
+const systemEnabledModules = $('systemEnabledModules');
+const systemSyncEnabled = $('systemSyncEnabled');
 const invoiceSettingsForm = $('invoiceSettingsForm');
 const settingsDefaultTaxRate = $('settingsDefaultTaxRate');
 const settingsTermsConditions = $('settingsTermsConditions');
@@ -385,10 +416,39 @@ const currentPassword = $('currentPassword');
 const changeNewPassword = $('changeNewPassword');
 const confirmNewPassword = $('confirmNewPassword');
 const passwordStrength = $('passwordStrength');
+const posToggleBtn = $('posToggleBtn');
+const posForm = $('posForm');
+const posProductId = $('posProductId');
+const posQty = $('posQty');
+const roomForm = $('roomForm');
+const roomNumber = $('roomNumber');
+const roomType = $('roomType');
+const roomRate = $('roomRate');
+const roomsTableBody = $('roomsTableBody');
+const guestForm = $('guestForm');
+const guestName = $('guestName');
+const guestPhone = $('guestPhone');
+const guestEmail = $('guestEmail');
+const guestNotes = $('guestNotes');
+const guestsTableBody = $('guestsTableBody');
+const bookingForm = $('bookingForm');
+const bookingRoomId = $('bookingRoomId');
+const bookingGuestId = $('bookingGuestId');
+const bookingCheckInDate = $('bookingCheckInDate');
+const bookingCheckOutDate = $('bookingCheckOutDate');
+const bookingNotes = $('bookingNotes');
+const bookingsTableBody = $('bookingsTableBody');
+const patientForm = $('patientForm');
+const patientName = $('patientName');
+const patientPhone = $('patientPhone');
+const patientNotes = $('patientNotes');
+const patientsTableBody = $('patientsTableBody');
+const drugExpiryTableBody = $('drugExpiryTableBody');
 
 const navSvgs = {
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="5"/><rect x="13" y="10" width="8" height="11"/><rect x="3" y="13" width="8" height="8"/></svg>',
   products: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/></svg>',
+  sales: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5h16v14H4z"/><path d="M8 15l3-3 2 2 3-4"/></svg>',
   categories: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>',
   suppliers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18v12H3z"/><path d="M7 7V4h10v3"/></svg>',
   customers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
@@ -725,19 +785,22 @@ async function handleMenuAction(action) {
 }
 
 function setActiveSection(name) {
-  for (const b of sectionButtons) b.classList.toggle('active', b.dataset.section === name);
-  for (const s of sections) s.classList.toggle('active', s.id === `section-${name}`);
-  const active = sectionButtons.find((b) => b.dataset.section === name);
+  const target = sectionButtons.find((b) => b.dataset.section === name && b.style.display !== 'none');
+  const safeName = target ? name : (sectionButtons.find((b) => b.style.display !== 'none')?.dataset.section || 'dashboard');
+  for (const b of sectionButtons) b.classList.toggle('active', b.dataset.section === safeName);
+  for (const s of sections) s.classList.toggle('active', s.id === `section-${safeName}`);
+  const active = sectionButtons.find((b) => b.dataset.section === safeName);
   sectionTitle.textContent = active ? active.textContent : 'Dashboard';
 }
 
-function updateAuthUi() {
-  const authed = Boolean(state.session?.authenticated);
-  loginOverlay.classList.toggle('active', !authed);
-  currentUser.textContent = authed ? `Signed in: ${state.session.user.username}` : 'Not signed in';
-  setImgOrPlaceholder(currentUserAvatar, state.session?.user?.profileImagePath || '', state.session?.user?.username || 'User');
-  clockInOverlay.classList.toggle('active', authed && !state.session.clockedIn);
-  if (!authed || !state.session?.clockedIn) stopDashboardLiveUpdates();
+function applySidebarLabels() {
+  const labelMap = state.moduleConfig?.labelMap || {};
+  sectionButtons.forEach((btn) => {
+    const section = btn.dataset.section;
+    const textEl = btn.querySelector('span:last-child');
+    if (!textEl) return;
+    textEl.textContent = labelMap[section] || defaultSidebarLabels.get(section) || section;
+  });
 }
 
 function renderSectionAccess() {
@@ -757,12 +820,40 @@ function renderSectionAccess() {
     company: 'company',
     users: 'users',
     roles: 'roles',
-    settings: 'settings'
+    settings: 'settings',
+    pos: 'sales',
+    bookings: 'company',
+    rooms: 'company',
+    guests: 'customers',
+    patients: 'customers',
+    drugexpiry: 'products'
   };
+  const visibleItems = Array.isArray(state.moduleConfig?.visibleSidebarItems) && state.moduleConfig.visibleSidebarItems.length
+    ? new Set(state.moduleConfig.visibleSidebarItems)
+    : null;
   sectionButtons.forEach((btn) => {
+    const section = btn.dataset.section;
     const moduleName = routeMap[btn.dataset.section];
-    btn.style.display = can(moduleName, 'view') ? '' : 'none';
+    const permissionVisible = can(moduleName, 'view');
+    const moduleVisible = !visibleItems || visibleItems.has(section);
+    btn.style.display = permissionVisible && moduleVisible ? '' : 'none';
   });
+  applySidebarLabels();
+  const activeVisible = sectionButtons.find((btn) => btn.classList.contains('active') && btn.style.display !== 'none');
+  if (activeVisible) setActiveSection(activeVisible.dataset.section);
+  else {
+    const fallback = sectionButtons.find((btn) => btn.style.display !== 'none');
+    if (fallback) setActiveSection(fallback.dataset.section);
+  }
+}
+
+function updateAuthUi() {
+  const authed = Boolean(state.session?.authenticated);
+  loginOverlay.classList.toggle('active', !authed);
+  currentUser.textContent = authed ? `Signed in: ${state.session.user.username}` : 'Not signed in';
+  setImgOrPlaceholder(currentUserAvatar, state.session?.user?.profileImagePath || '', state.session?.user?.username || 'User');
+  clockInOverlay.classList.toggle('active', authed && !state.session.clockedIn);
+  if (!authed || !state.session?.clockedIn) stopDashboardLiveUpdates();
 }
 
 function applyFormAccess() {
@@ -789,6 +880,12 @@ function applyFormAccess() {
   toggle('#userForm input, #userForm select, #userForm button[type="submit"]', can('users', 'create') || can('users', 'edit'));
   toggle('#createUserForm input, #createUserForm button[type="submit"]', can('users', 'create'));
   toggle('#roleForm input, #roleForm button[type="submit"]', can('roles', 'create') || can('roles', 'edit'));
+  toggle('#posForm input, #posForm select, #posForm button', can('sales', 'create'));
+  toggle('#roomForm input, #roomForm button', can('company', 'edit'));
+  toggle('#guestForm input, #guestForm textarea, #guestForm button', can('customers', 'create'));
+  toggle('#bookingForm input, #bookingForm select, #bookingForm textarea, #bookingForm button', can('company', 'create'));
+  toggle('#patientForm input, #patientForm button', can('customers', 'create'));
+  if (systemConfigForm) systemConfigForm.style.display = state.session?.user?.isAdmin ? '' : 'none';
 }
 
 function renderCompanySwitcher() {
@@ -1422,11 +1519,87 @@ function renderCompany() {
   companyBankName.value = c.bankName || '';
   companyAccountNumber.value = c.accountNumber || '';
   companyPrimaryColor.value = c.primaryColor || '#f4c214';
+  if (companyIndustryType) companyIndustryType.value = c.industryType || 'general';
   companyPaymentMethods.value = Array.isArray(c.paymentMethods) ? c.paymentMethods.join(', ') : '';
   companyLogoPath.value = c.logoPath || '';
   companySignaturePath.value = c.signaturePath || '';
   if (c.logoPath) companyLogoPreview.src = fileUrl(c.logoPath); else companyLogoPreview.removeAttribute('src');
   if (c.signaturePath) companySignaturePreview.src = fileUrl(c.signaturePath); else companySignaturePreview.removeAttribute('src');
+}
+
+function renderSystemConfiguration() {
+  if (!systemConfigForm) return;
+  const config = state.systemConfig || {};
+  systemIndustryType.value = config.industryType || state.company?.industryType || 'general';
+  systemEnabledModules.value = (config.enabledModules || ['core']).join(',');
+  systemSyncEnabled.checked = Boolean(config.syncEnabled);
+  systemConfigForm.style.display = state.session?.user?.isAdmin ? '' : 'none';
+}
+
+function renderRooms() {
+  if (!roomsTableBody) return;
+  roomsTableBody.innerHTML = '';
+  if (!state.rooms.length) {
+    roomsTableBody.innerHTML = '<tr><td colspan="4">No rooms found.</td></tr>';
+    return;
+  }
+  state.rooms.forEach((row) => roomsTableBody.insertAdjacentHTML('beforeend', `<tr><td>${row.roomNumber}</td><td>${row.roomType || '-'}</td><td>${currency(row.rate)}</td><td>${row.status}</td></tr>`));
+}
+
+function renderGuests() {
+  if (!guestsTableBody) return;
+  guestsTableBody.innerHTML = '';
+  if (!state.guests.length) {
+    guestsTableBody.innerHTML = '<tr><td colspan="4">No guests found.</td></tr>';
+    return;
+  }
+  state.guests.forEach((row) => guestsTableBody.insertAdjacentHTML('beforeend', `<tr><td>${row.name}</td><td>${row.phone || '-'}</td><td>${row.email || '-'}</td><td>${row.notes || '-'}</td></tr>`));
+}
+
+function renderBookings() {
+  if (!bookingsTableBody) return;
+  bookingsTableBody.innerHTML = '';
+  if (!state.bookings.length) {
+    bookingsTableBody.innerHTML = '<tr><td colspan="6">No bookings found.</td></tr>';
+  } else {
+    state.bookings.forEach((row) => bookingsTableBody.insertAdjacentHTML('beforeend', `<tr><td>${row.roomNumber}</td><td>${row.guestName}</td><td>${String(row.checkInDate || '').slice(0, 10)}</td><td>${String(row.checkOutDate || '').slice(0, 10)}</td><td>${row.status}</td><td><button class="btn btn-sm btn-outline-success" data-action="booking-checkin" data-id="${row.id}">Check-in</button> <button class="btn btn-sm btn-outline-primary" data-action="booking-checkout" data-id="${row.id}">Check-out</button></td></tr>`));
+  }
+  if (bookingRoomId) {
+    bookingRoomId.innerHTML = '<option value="">Select Room</option>';
+    state.rooms.forEach((r) => bookingRoomId.insertAdjacentHTML('beforeend', `<option value="${r.id}">${r.roomNumber} (${r.status})</option>`));
+  }
+  if (bookingGuestId) {
+    bookingGuestId.innerHTML = '<option value="">Select Guest</option>';
+    state.guests.forEach((g) => bookingGuestId.insertAdjacentHTML('beforeend', `<option value="${g.id}">${g.name}</option>`));
+  }
+}
+
+function renderPatients() {
+  if (!patientsTableBody) return;
+  patientsTableBody.innerHTML = '';
+  if (!state.patients.length) {
+    patientsTableBody.innerHTML = '<tr><td colspan="3">No patients found.</td></tr>';
+    return;
+  }
+  state.patients.forEach((row) => patientsTableBody.insertAdjacentHTML('beforeend', `<tr><td>${row.name}</td><td>${row.phone || '-'}</td><td>${row.notes || '-'}</td></tr>`));
+}
+
+function renderDrugExpiry() {
+  if (!drugExpiryTableBody) return;
+  drugExpiryTableBody.innerHTML = '';
+  if (!state.drugExpiry.length) {
+    drugExpiryTableBody.innerHTML = '<tr><td colspan="4">No near-expiry drugs detected.</td></tr>';
+    return;
+  }
+  state.drugExpiry.forEach((row) => drugExpiryTableBody.insertAdjacentHTML('beforeend', `<tr><td>${row.productName}</td><td>${row.batchNo || '-'}</td><td>${String(row.expiryDate || '').slice(0, 10)}</td><td>${row.qty}</td></tr>`));
+}
+
+function renderPosLookups() {
+  if (!posProductId) return;
+  const keep = posProductId.value;
+  posProductId.innerHTML = '<option value="">Select Product</option>';
+  state.products.forEach((p) => posProductId.insertAdjacentHTML('beforeend', `<option value="${p.id}">${p.name} (${p.quantity})</option>`));
+  posProductId.value = keep;
 }
 
 function renderReport(report, expenseReport = null, incomeReport = null, cashflowReport = null, revenueReport = null, combinedReport = null) {
@@ -1500,13 +1673,36 @@ function stopCamera() {
 async function refreshSession() {
   state.session = await api.getSession();
   state.companies = state.session?.companies || [];
+  if (state.session?.authenticated && typeof api.getIndustryModuleConfig === 'function') {
+    try {
+      state.moduleConfig = await api.getIndustryModuleConfig();
+    } catch {
+      // Keep previous module config when unavailable.
+    }
+  }
   updateAuthUi();
   renderSectionAccess();
   renderCompanySwitcher();
 }
 
 async function refreshData() {
-  const [categories, suppliers, customers, products, vendors, expenseCategories, incomeCategories, expenses, incomes, wallet, transactions, stats, company, invoices, clockIns, dashboardSalesReport] = await Promise.all([
+  const moduleConfig = await (api.getIndustryModuleConfig?.() || Promise.resolve({ industry: 'general', visibleSidebarItems: [], enabledFeatures: {}, labelMap: {}, enabledModules: ['core'] }));
+  let systemConfig = { industryType: moduleConfig.industry || 'general', syncEnabled: false, enabledModules: ['core'], featureToggles: {} };
+  try {
+    if (typeof api.getSystemConfiguration === 'function') {
+      const cfg = await api.getSystemConfiguration();
+      if (cfg) systemConfig = { industryType: cfg.industryType || moduleConfig.industry || 'general', syncEnabled: Boolean(cfg.syncEnabled), enabledModules: cfg.enabledModules || ['core'], featureToggles: cfg.featureToggles || {} };
+    }
+  } catch {
+    // Non-admin users can continue without editable system configuration.
+  }
+  state.moduleConfig = moduleConfig || state.moduleConfig;
+  state.systemConfig = systemConfig || state.systemConfig;
+
+  const hospitalityEnabled = Boolean(state.moduleConfig?.enabledFeatures?.hospitality);
+  const medicalEnabled = Boolean(state.moduleConfig?.enabledFeatures?.medical);
+
+  const [categories, suppliers, customers, products, vendors, expenseCategories, incomeCategories, expenses, incomes, wallet, transactions, stats, company, invoices, clockIns, dashboardSalesReport, rooms, guests, bookings, patients, drugExpiry, insights] = await Promise.all([
     can('categories', 'view') ? api.getCategories() : Promise.resolve([]),
     can('suppliers', 'view') ? api.getSuppliers() : Promise.resolve([]),
     can('customers', 'view') ? api.getCustomers() : Promise.resolve([]),
@@ -1524,18 +1720,30 @@ async function refreshData() {
     can('dashboard', 'view') ? api.getRecentClockIns({ limit: 300, allCompanies: Boolean(state.session?.user?.isAdmin) }) : Promise.resolve([]),
     (can('dashboard', 'view') && state.session?.user?.isAdmin && can('reports', 'view'))
       ? api.getSalesReport({ period: 'monthly' })
-      : Promise.resolve(null)
+      : Promise.resolve(null),
+    hospitalityEnabled ? api.getRooms() : Promise.resolve([]),
+    hospitalityEnabled ? api.getGuests() : Promise.resolve([]),
+    hospitalityEnabled ? api.getBookings() : Promise.resolve([]),
+    medicalEnabled ? api.getPatients() : Promise.resolve([]),
+    medicalEnabled ? api.getDrugExpiry({ daysAhead: 30 }) : Promise.resolve([]),
+    can('reports', 'view') ? api.getInsights({ limit: 100 }) : Promise.resolve([])
   ]);
   const invoiceSettings = can('settings', 'view') ? await api.getInvoiceSettings() : { defaultTaxRate: 0, termsConditions: '' };
   const emailSettings = can('settings', 'edit')
     ? await api.getEmailSettings()
     : { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
   state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.vendors = vendors; state.expenseCategories = expenseCategories; state.incomeCategories = incomeCategories; state.expenses = expenses; state.incomes = incomes; state.wallet = wallet || { currentBalance: 0, lastUpdatedAt: '' }; state.cashflowTransactions = transactions || []; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '', includeRevenueInBalance: false }; state.emailSettings = emailSettings || { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
+  state.rooms = rooms || [];
+  state.guests = guests || [];
+  state.bookings = bookings || [];
+  state.patients = patients || [];
+  state.drugExpiry = drugExpiry || [];
+  state.insights = insights || [];
   state.roles = can('roles', 'view') ? await api.getRoles() : [];
   state.users = can('users', 'view') ? await api.getUsers() : [];
   if (!state.invoiceDraft.invoiceNumber) await refreshInvoiceNumber();
   if (state.invoiceDraft.useDefaultTax) invoiceTaxPercent.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
-  renderLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderVendors(); renderExpenses(); renderIncome(); renderCashflow(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); renderClockInGallery(state.clockIns); renderCompany(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); applyFormAccess();
+  renderLookups(); renderPosLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderVendors(); renderExpenses(); renderIncome(); renderCashflow(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); renderClockInGallery(state.clockIns); renderCompany(); renderSystemConfiguration(); renderRooms(); renderGuests(); renderBookings(); renderPatients(); renderDrugExpiry(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); renderSectionAccess(); applyFormAccess();
 }
 
 async function safeRefresh() {
@@ -1728,6 +1936,78 @@ saleForm.addEventListener('submit', async (e) => {
     });
     saleForm.reset(); await refreshData(); showStatus('Sale recorded.');
   } catch (err) { showStatus(err.message || 'Sale failed.', 'error'); }
+});
+
+posToggleBtn?.addEventListener('click', () => {
+  state.posMode = !state.posMode;
+  posToggleBtn.textContent = state.posMode ? 'Disable POS Mode' : 'Enable POS Mode';
+  showStatus(state.posMode ? 'POS mode enabled.' : 'POS mode disabled.');
+});
+posForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const productId = Number(posProductId.value || 0);
+    const quantity = Number(posQty.value || 1);
+    if (!productId || quantity <= 0) throw new Error('Select product and quantity.');
+    await api.recordSale({ productId, quantity, amountPaid: null });
+    posQty.value = '1';
+    await refreshData();
+    showStatus('Fast checkout completed.');
+  } catch (err) { showStatus(err.message || 'POS checkout failed.', 'error'); }
+});
+roomForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api.createRoom({ roomNumber: roomNumber.value.trim(), roomType: roomType.value.trim(), rate: Number(roomRate.value || 0) });
+    roomForm.reset();
+    await refreshData();
+    showStatus('Room added.');
+  } catch (err) { showStatus(err.message || 'Room save failed.', 'error'); }
+});
+guestForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api.createGuest({ name: guestName.value.trim(), phone: guestPhone.value.trim(), email: guestEmail.value.trim(), notes: guestNotes.value.trim() });
+    guestForm.reset();
+    await refreshData();
+    showStatus('Guest added.');
+  } catch (err) { showStatus(err.message || 'Guest save failed.', 'error'); }
+});
+bookingForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api.createBooking({
+      roomId: Number(bookingRoomId.value || 0),
+      guestId: Number(bookingGuestId.value || 0),
+      checkInDate: bookingCheckInDate.value,
+      checkOutDate: bookingCheckOutDate.value,
+      notes: bookingNotes.value.trim()
+    });
+    bookingForm.reset();
+    await refreshData();
+    showStatus('Booking created.');
+  } catch (err) { showStatus(err.message || 'Booking failed.', 'error'); }
+});
+bookingsTableBody?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action][data-id]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id || 0);
+  if (!id) return;
+  try {
+    if (btn.dataset.action === 'booking-checkin') await api.updateBookingStatus({ id, status: 'checked_in' });
+    if (btn.dataset.action === 'booking-checkout') await api.updateBookingStatus({ id, status: 'checked_out' });
+    await refreshData();
+    showStatus('Booking status updated.');
+  } catch (err) { showStatus(err.message || 'Booking status update failed.', 'error'); }
+});
+patientForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api.createPatient({ name: patientName.value.trim(), phone: patientPhone.value.trim(), notes: patientNotes.value.trim() });
+    patientForm.reset();
+    await refreshData();
+    showStatus('Patient record added.');
+  } catch (err) { showStatus(err.message || 'Patient save failed.', 'error'); }
 });
 
 categoryForm.addEventListener('submit', async (e) => {
@@ -2140,12 +2420,17 @@ companyForm.addEventListener('submit', async (e) => {
       bankName: companyBankName.value.trim(),
       accountNumber: companyAccountNumber.value.trim(),
       primaryColor: companyPrimaryColor.value,
+      industryType: String(companyIndustryType?.value || 'general'),
       paymentMethods: companyPaymentMethods.value.split(',').map((x) => x.trim()).filter(Boolean)
     };
     if (!payload.name) throw new Error('Company name is required.');
     if (!isEmail(payload.email)) throw new Error('Please enter a valid company email.');
     if (payload.accountNumber && !/^\d+$/.test(payload.accountNumber)) throw new Error('Account number must contain digits only.');
     if (!/^#[0-9a-fA-F]{6}$/.test(payload.primaryColor || '')) throw new Error('Primary color must be a valid hex value.');
+    if ((state.company?.industryType || 'general') !== payload.industryType) {
+      const ok = window.confirm('Changing industry can alter visible modules and labels. Continue?');
+      if (!ok) return;
+    }
     state.company = await api.saveActiveCompany(payload); renderCompany(); showStatus('Company setup saved.');
   } catch (err) { showStatus(err.message || 'Unable to save company.', 'error'); }
 });
@@ -2316,6 +2601,34 @@ clockInViewerModal.addEventListener('click', (e) => {
 
 backupBtn.addEventListener('click', async () => { try { await runBackupDatabase(); } catch (err) { showStatus(err.message || 'Backup failed.', 'error'); } });
 restoreBtn.addEventListener('click', async () => { try { if (!window.confirm('Restore backup and overwrite local data?')) return; const r = await api.restoreDatabase(); if (r.cancelled) return showStatus('Restore cancelled.', 'warning'); await safeRefresh(); showStatus(`Database restored from ${r.restoredFrom}`); } catch (err) { showStatus(err.message || 'Restore failed.', 'error'); } });
+autoBackupNowBtn?.addEventListener('click', async () => { try { await api.runAutoBackupNow(); showStatus('Auto backup run completed.'); } catch (err) { showStatus(err.message || 'Auto backup failed.', 'error'); } });
+systemConfigForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const nextIndustry = String(systemIndustryType.value || 'general');
+    const industryChanged = nextIndustry !== String(state.company?.industryType || 'general');
+    if (industryChanged) {
+      const ok = window.confirm('This will switch the company industry and adapt navigation labels/modules. Continue?');
+      if (!ok) return;
+    }
+    const enabledModules = systemEnabledModules.value.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+    const updated = await api.updateSystemConfiguration({
+      industryType: nextIndustry,
+      enabledModules: enabledModules.length ? enabledModules : ['core'],
+      syncEnabled: Boolean(systemSyncEnabled.checked)
+    });
+    state.company = updated?.company || state.company;
+    state.moduleConfig = updated?.moduleConfig || state.moduleConfig;
+    state.systemConfig = {
+      ...(state.systemConfig || {}),
+      industryType: nextIndustry,
+      syncEnabled: Boolean(systemSyncEnabled.checked),
+      enabledModules: enabledModules.length ? enabledModules : ['core']
+    };
+    await safeRefresh();
+    showStatus('System configuration saved.');
+  } catch (err) { showStatus(err.message || 'Unable to save system configuration.', 'error'); }
+});
 createUserForm.addEventListener('submit', async (e) => { e.preventDefault(); try { await api.createUser({ username: newUsername.value.trim(), password: newPassword.value, isAdmin: false, assignedCompanies: [Number(companySwitcher.value)] }); createUserForm.reset(); await safeRefresh(); showStatus('Quick user created.'); } catch (err) { showStatus(err.message || 'Quick user create failed.', 'error'); } });
 
 changeNewPassword.addEventListener('input', () => { const v = changeNewPassword.value; let s = 0; if (v.length >= 8) s++; if (/[A-Z]/.test(v)) s++; if (/[a-z]/.test(v)) s++; if (/\d/.test(v)) s++; if (/[^A-Za-z0-9]/.test(v)) s++; if (!v) { passwordStrength.textContent = 'Strength: enter password'; passwordStrength.classList.remove('weak', 'strong'); } else if (s >= 4) { passwordStrength.textContent = 'Strength: strong'; passwordStrength.classList.add('strong'); passwordStrength.classList.remove('weak'); } else { passwordStrength.textContent = 'Strength: weak (use upper/lower/number/symbol, 8+ chars)'; passwordStrength.classList.add('weak'); passwordStrength.classList.remove('strong'); } });
@@ -2353,13 +2666,3 @@ window.addEventListener('beforeunload', () => {
   stopDashboardLiveUpdates();
   stopCamera();
 });
-
-
-
-
-
-
-
-
-
-

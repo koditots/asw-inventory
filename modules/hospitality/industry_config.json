@@ -1,0 +1,28 @@
+{
+  "industry": "hospitality",
+  "visibleSidebarItems": [
+    "dashboard",
+    "bookings",
+    "rooms",
+    "guests",
+    "products",
+    "invoices",
+    "reports",
+    "settings"
+  ],
+  "enabledFeatures": {
+    "hospitality": true,
+    "bookings": true,
+    "rooms": true,
+    "guestRecords": true,
+    "kitchenInventory": true
+  },
+  "labelMap": {
+    "products": "Kitchen Inventory",
+    "customers": "Guests",
+    "bookings": "Bookings",
+    "rooms": "Rooms",
+    "guests": "Guests",
+    "reports": "Billing Reports"
+  }
+}

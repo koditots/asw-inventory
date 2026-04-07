@@ -31,6 +31,9 @@ const parseJsonObject = (v, fallback = {}) => {
 
 const PERMISSION_MODULES = ['dashboard', 'products', 'sales', 'categories', 'suppliers', 'customers', 'invoices', 'reports', 'company', 'users', 'roles', 'settings', 'expenses', 'vendors', 'income', 'cashflow'];
 const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'print'];
+const INDUSTRY_TYPES = ['retail', 'hospitality', 'medical', 'general'];
+const DEFAULT_INDUSTRY = 'general';
+const MODULE_TYPES = ['core', 'retail', 'hospitality', 'medical'];
 
 function fullPermissions() {
   const permissions = {};
@@ -49,6 +52,18 @@ function normalizePermissions(raw) {
     normalized[module] = {};
     for (const action of PERMISSION_ACTIONS) normalized[module][action] = Boolean(moduleSrc[action]);
   }
+  return normalized;
+}
+
+function normalizeIndustryType(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return INDUSTRY_TYPES.includes(normalized) ? normalized : DEFAULT_INDUSTRY;
+}
+
+function normalizeEnabledModules(value) {
+  const list = Array.isArray(value) ? value : parseJsonArray(value);
+  const normalized = [...new Set(list.map((x) => String(x || '').trim().toLowerCase()).filter((x) => MODULE_TYPES.includes(x)))];
+  if (!normalized.includes('core')) normalized.unshift('core');
   return normalized;
 }
 
@@ -395,6 +410,74 @@ async function migrate() {
   )`);
   await run('CREATE INDEX IF NOT EXISTS idx_email_queue_company_status ON email_queue(company_id, status, created_at)');
 
+  await run(`CREATE TABLE IF NOT EXISTS rooms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    room_number TEXT NOT NULL,
+    room_type TEXT NOT NULL DEFAULT '',
+    rate REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'available',
+    created_at TEXT NOT NULL,
+    UNIQUE(company_id, room_number)
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS guests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS bookings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    room_id INTEGER NOT NULL,
+    guest_id INTEGER NOT NULL,
+    check_in_date TEXT NOT NULL,
+    check_out_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'booked',
+    invoice_id INTEGER,
+    notes TEXT DEFAULT '',
+    created_by INTEGER,
+    created_at TEXT NOT NULL
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_bookings_company_dates ON bookings(company_id, check_in_date, check_out_date)');
+
+  await run(`CREATE TABLE IF NOT EXISTS patients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS drug_expiry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    expiry_date TEXT NOT NULL,
+    batch_no TEXT DEFAULT '',
+    qty INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_drug_expiry_company_date ON drug_expiry(company_id, expiry_date)');
+
+  await run(`CREATE TABLE IF NOT EXISTS insight_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    insight_type TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    metric_value REAL NOT NULL DEFAULT 0,
+    baseline_value REAL NOT NULL DEFAULT 0,
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_insight_log_company_date ON insight_log(company_id, created_at DESC)');
+
   await ensureCol('products', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('products', 'category_id', 'INTEGER');
   await ensureCol('products', 'supplier_id', 'INTEGER');
@@ -455,7 +538,11 @@ async function migrate() {
   await ensureCol('roles', 'permissions', "TEXT NOT NULL DEFAULT '{}'");
   await ensureCol('roles', 'created_at', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('roles', 'updated_at', "TEXT NOT NULL DEFAULT ''");
-  await ensureCol('company', 'industry_type', "TEXT NOT NULL DEFAULT 'retail'");
+  await ensureCol('company', 'industry_type', "TEXT NOT NULL DEFAULT 'general'");
+  await ensureCol('settings', 'sync_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureCol('settings', 'enabled_modules', "TEXT NOT NULL DEFAULT '[\"core\"]'");
+  await ensureCol('settings', 'feature_toggles', "TEXT NOT NULL DEFAULT '{}'");
+  await ensureCol('settings', 'last_auto_backup_at', "TEXT NOT NULL DEFAULT ''");
 
   const companyCount = await get('SELECT COUNT(*) AS c FROM company');
   if (!companyCount || companyCount.c === 0) {
@@ -500,7 +587,13 @@ async function migrate() {
   await run("UPDATE invoices SET notes = '' WHERE notes IS NULL");
   await run("UPDATE customers SET notes = '' WHERE notes IS NULL");
   await run("UPDATE customers SET tags = '' WHERE tags IS NULL");
-  await run("UPDATE company SET industry_type = 'retail' WHERE industry_type IS NULL OR TRIM(industry_type) = ''");
+  await run("UPDATE company SET industry_type = 'general' WHERE industry_type IS NULL OR TRIM(industry_type) = ''");
+  await run("UPDATE company SET industry_type = LOWER(TRIM(industry_type))");
+  await run("UPDATE company SET industry_type = 'general' WHERE industry_type NOT IN ('retail', 'hospitality', 'medical', 'general')");
+  await run("UPDATE settings SET sync_enabled = 0 WHERE sync_enabled IS NULL");
+  await run("UPDATE settings SET enabled_modules = '[\"core\"]' WHERE enabled_modules IS NULL OR TRIM(enabled_modules) = ''");
+  await run("UPDATE settings SET feature_toggles = '{}' WHERE feature_toggles IS NULL OR TRIM(feature_toggles) = ''");
+  await run("UPDATE settings SET last_auto_backup_at = '' WHERE last_auto_backup_at IS NULL");
 
   // Backfill canonical payment history from legacy invoice_payments where needed.
   await run(
@@ -687,7 +780,7 @@ function normalizeCompany(row) {
     accountNumber: row.account_number || '',
     paymentMethods: parseJsonArray(row.payment_methods),
     primaryColor: isHexColor(row.primary_color) ? String(row.primary_color).trim() : '#f4c214',
-    industryType: String(row.industry_type || 'retail'),
+    industryType: normalizeIndustryType(row.industry_type),
     smtpHost: String(row.smtp_host || ''),
     smtpPort: toInt(row.smtp_port, 587),
     smtpUser: String(row.smtp_user || ''),
@@ -729,7 +822,7 @@ function mapCompanyInput(payload, fallback = {}) {
   const accountNumber = String(payload.accountNumber ?? fallback.accountNumber ?? '').trim();
   const primaryColorRaw = String(payload.primaryColor ?? fallback.primaryColor ?? '#f4c214').trim();
   const primaryColor = isHexColor(primaryColorRaw) ? primaryColorRaw : '#f4c214';
-  const industryType = String(payload.industryType ?? fallback.industryType ?? 'retail').trim().toLowerCase() || 'retail';
+  const industryType = normalizeIndustryType(payload.industryType ?? fallback.industryType ?? DEFAULT_INDUSTRY);
   const smtpHost = String(payload.smtpHost ?? fallback.smtpHost ?? '').trim();
   const smtpPortRaw = payload.smtpPort ?? fallback.smtpPort ?? 587;
   const smtpPort = Number(smtpPortRaw);
@@ -739,6 +832,7 @@ function mapCompanyInput(payload, fallback = {}) {
   const paymentMethods = normalizePaymentMethods(payload.paymentMethods ?? fallback.paymentMethods ?? []);
   if (!name) throw new Error('Company name is required.');
   if (!isEmail(email)) throw new Error('Please provide a valid company email.');
+  if (!INDUSTRY_TYPES.includes(industryType)) throw new Error('Industry type is invalid.');
   if (accountNumber && !/^\d+$/.test(accountNumber)) throw new Error('Account number must contain only digits.');
   if (!Number.isFinite(smtpPort) || smtpPort <= 0 || smtpPort > 65535) throw new Error('SMTP port must be between 1 and 65535.');
   if (smtpUser && !isEmail(smtpUser)) throw new Error('SMTP user must be a valid email address.');
@@ -1223,6 +1317,68 @@ async function updateProduct(payload, companyId) {
 
 const deleteProduct = (id, companyId) => run('DELETE FROM products WHERE id = ? AND company_id = ?', [toInt(id, -1), toInt(companyId, -1)]);
 
+async function logInsight({ companyId, insightType, metricName, metricValue = 0, baselineValue = 0, notes = '' }) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) return;
+  await run(
+    `INSERT INTO insight_log (company_id, insight_type, metric_name, metric_value, baseline_value, notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      cid,
+      String(insightType || 'general'),
+      String(metricName || 'metric'),
+      Number(metricValue || 0),
+      Number(baselineValue || 0),
+      String(notes || ''),
+      new Date().toISOString()
+    ]
+  );
+}
+
+async function detectLowStockInsight(companyId, productId) {
+  const row = await get(
+    `SELECT id, name, quantity, COALESCE(min_stock, 5) AS minStock
+     FROM products
+     WHERE company_id = ? AND id = ?`,
+    [toInt(companyId, -1), toInt(productId, -1)]
+  );
+  if (!row) return;
+  if (Number(row.quantity) <= Number(row.minStock || 5)) {
+    await logInsight({
+      companyId,
+      insightType: 'low_stock',
+      metricName: 'product_stock',
+      metricValue: Number(row.quantity || 0),
+      baselineValue: Number(row.minStock || 5),
+      notes: `${row.name} has reached low stock threshold.`
+    });
+  }
+}
+
+async function detectSalesSpikeInsight(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) return;
+  const now = new Date();
+  const hourAgo = new Date(now.getTime() - (60 * 60 * 1000)).toISOString();
+  const dayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
+  const [lastHour, prevWindow] = await Promise.all([
+    get('SELECT COUNT(*) AS c FROM sales WHERE company_id = ? AND date >= ?', [cid, hourAgo]),
+    get('SELECT COUNT(*) AS c FROM sales WHERE company_id = ? AND date >= ? AND date < ?', [cid, dayAgo, hourAgo])
+  ]);
+  const lastHourCount = Number(lastHour?.c || 0);
+  const baselinePerHour = Number(prevWindow?.c || 0) / 23;
+  if (lastHourCount >= 8 && lastHourCount > (baselinePerHour * 2.5)) {
+    await logInsight({
+      companyId: cid,
+      insightType: 'sales_spike',
+      metricName: 'sales_per_hour',
+      metricValue: lastHourCount,
+      baselineValue: Number(baselinePerHour.toFixed(2)),
+      notes: 'Unusual sales spike detected in the last hour.'
+    });
+  }
+}
+
 async function recordSale(payload, companyId) {
   const cid = toInt(companyId, -1);
   const productId = toInt(payload.productId, -1);
@@ -1276,6 +1432,10 @@ async function recordSale(payload, companyId) {
       metadata: { productId, quantity: qty, totalPrice, amountPaid, balanceDue, paymentMethod: String(payload?.paymentMethod || 'cash') }
     });
     await run('COMMIT');
+    await Promise.allSettled([
+      detectLowStockInsight(cid, productId),
+      detectSalesSpikeInsight(cid)
+    ]);
     return { id: res.id, productId, customerId: customerValue, quantity: qty, totalPrice, amountPaid, balanceDue, date: stamp, receiptNumber };
   } catch (e) {
     await run('ROLLBACK');
@@ -2178,7 +2338,11 @@ function normalizeCompanySettings(row, companyId) {
     companyId: toInt(row?.company_id, toInt(companyId, 1)),
     defaultTaxRate: Number(row?.default_tax_rate || 0),
     termsConditions: String(row?.terms_conditions || ''),
-    includeRevenueInBalance: Number(row?.include_revenue_in_balance || 0) === 1
+    includeRevenueInBalance: Number(row?.include_revenue_in_balance || 0) === 1,
+    syncEnabled: Number(row?.sync_enabled || 0) === 1,
+    enabledModules: normalizeEnabledModules(row?.enabled_modules || '["core"]'),
+    featureToggles: parseJsonObject(row?.feature_toggles || '{}', {}),
+    lastAutoBackupAt: String(row?.last_auto_backup_at || '')
   };
 }
 
@@ -2189,7 +2353,9 @@ async function getCompanySettings(companyId) {
   if (!row) {
     const stamp = new Date().toISOString();
     await run(
-      'INSERT INTO settings (company_id, default_tax_rate, terms_conditions, include_revenue_in_balance, created_at, updated_at) VALUES (?, 0, ?, 0, ?, ?)',
+      `INSERT INTO settings
+       (company_id, default_tax_rate, terms_conditions, include_revenue_in_balance, sync_enabled, enabled_modules, feature_toggles, last_auto_backup_at, created_at, updated_at)
+       VALUES (?, 0, ?, 0, 0, '["core"]', '{}', '', ?, ?)`,
       [cid, '', stamp, stamp]
     );
     row = await get('SELECT * FROM settings WHERE company_id = ?', [cid]);
@@ -2207,12 +2373,16 @@ async function updateCompanySettings(companyId, payload = {}) {
   }
   const termsConditions = String(payload.termsConditions ?? existing.termsConditions ?? '').trim();
   const includeRevenueInBalance = Boolean(payload.includeRevenueInBalance ?? existing.includeRevenueInBalance ?? false);
+  const syncEnabled = Boolean(payload.syncEnabled ?? existing.syncEnabled ?? false);
+  const enabledModules = normalizeEnabledModules(payload.enabledModules ?? existing.enabledModules ?? ['core']);
+  const featureToggles = parseJsonObject(payload.featureToggles ?? existing.featureToggles ?? {}, {});
+  const lastAutoBackupAt = String(payload.lastAutoBackupAt ?? existing.lastAutoBackupAt ?? '').trim();
   const stamp = new Date().toISOString();
   await run(
     `UPDATE settings
-     SET default_tax_rate = ?, terms_conditions = ?, include_revenue_in_balance = ?, updated_at = ?
+     SET default_tax_rate = ?, terms_conditions = ?, include_revenue_in_balance = ?, sync_enabled = ?, enabled_modules = ?, feature_toggles = ?, last_auto_backup_at = ?, updated_at = ?
      WHERE company_id = ?`,
-    [Number(defaultTaxRate.toFixed(4)), termsConditions, includeRevenueInBalance ? 1 : 0, stamp, cid]
+    [Number(defaultTaxRate.toFixed(4)), termsConditions, includeRevenueInBalance ? 1 : 0, syncEnabled ? 1 : 0, JSON.stringify(enabledModules), JSON.stringify(featureToggles), lastAutoBackupAt, stamp, cid]
   );
   return getCompanySettings(cid);
 }
@@ -2785,6 +2955,189 @@ async function changePassword(payload) {
   await run('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?', [hash, salt, user.id]);
 }
 
+async function getRooms(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  return all(
+    `SELECT id, room_number AS roomNumber, room_type AS roomType, rate, status, created_at AS createdAt
+     FROM rooms
+     WHERE company_id = ?
+     ORDER BY room_number ASC`,
+    [cid]
+  );
+}
+
+async function createRoom(payload = {}, companyId) {
+  const cid = toInt(companyId, -1);
+  const roomNumber = String(payload.roomNumber || '').trim();
+  const roomType = String(payload.roomType || '').trim();
+  const rate = Number(payload.rate || 0);
+  if (cid <= 0 || !roomNumber) throw new Error('Room number is required.');
+  if (!Number.isFinite(rate) || rate < 0) throw new Error('Room rate is invalid.');
+  const createdAt = new Date().toISOString();
+  const res = await run(
+    'INSERT INTO rooms (company_id, room_number, room_type, rate, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [cid, roomNumber, roomType, Number(rate.toFixed(2)), 'available', createdAt]
+  );
+  return get('SELECT id, room_number AS roomNumber, room_type AS roomType, rate, status, created_at AS createdAt FROM rooms WHERE id = ?', [res.id]);
+}
+
+async function getGuests(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  return all(
+    `SELECT id, name, phone, email, notes, created_at AS createdAt
+     FROM guests
+     WHERE company_id = ?
+     ORDER BY id DESC`,
+    [cid]
+  );
+}
+
+async function createGuest(payload = {}, companyId) {
+  const cid = toInt(companyId, -1);
+  const name = String(payload.name || '').trim();
+  const phone = String(payload.phone || '').trim();
+  const email = String(payload.email || '').trim();
+  const notes = String(payload.notes || '').trim();
+  if (cid <= 0 || !name) throw new Error('Guest name is required.');
+  if (!isEmail(email)) throw new Error('Guest email is invalid.');
+  const createdAt = new Date().toISOString();
+  const res = await run(
+    'INSERT INTO guests (company_id, name, phone, email, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [cid, name, phone, email, notes, createdAt]
+  );
+  return get('SELECT id, name, phone, email, notes, created_at AS createdAt FROM guests WHERE id = ?', [res.id]);
+}
+
+async function getBookings(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  return all(
+    `SELECT b.id, b.room_id AS roomId, b.guest_id AS guestId, b.check_in_date AS checkInDate, b.check_out_date AS checkOutDate,
+            b.status, b.invoice_id AS invoiceId, b.notes, b.created_at AS createdAt,
+            r.room_number AS roomNumber, g.name AS guestName
+     FROM bookings b
+     INNER JOIN rooms r ON r.id = b.room_id
+     INNER JOIN guests g ON g.id = b.guest_id
+     WHERE b.company_id = ?
+     ORDER BY b.created_at DESC`,
+    [cid]
+  );
+}
+
+async function createBooking(payload = {}, companyId, userId = null) {
+  const cid = toInt(companyId, -1);
+  const roomId = toInt(payload.roomId, -1);
+  const guestId = toInt(payload.guestId, -1);
+  const checkInDate = String(payload.checkInDate || '').trim();
+  const checkOutDate = String(payload.checkOutDate || '').trim();
+  const notes = String(payload.notes || '').trim();
+  if (cid <= 0 || roomId <= 0 || guestId <= 0 || !checkInDate || !checkOutDate) throw new Error('Booking data is invalid.');
+  const room = await get('SELECT id FROM rooms WHERE id = ? AND company_id = ?', [roomId, cid]);
+  const guest = await get('SELECT id FROM guests WHERE id = ? AND company_id = ?', [guestId, cid]);
+  if (!room) throw new Error('Room not found.');
+  if (!guest) throw new Error('Guest not found.');
+  const createdAt = new Date().toISOString();
+  const res = await run(
+    `INSERT INTO bookings (company_id, room_id, guest_id, check_in_date, check_out_date, status, invoice_id, notes, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, 'booked', NULL, ?, ?, ?)`,
+    [cid, roomId, guestId, checkInDate, checkOutDate, notes, toInt(userId, null), createdAt]
+  );
+  await run("UPDATE rooms SET status = 'booked' WHERE id = ? AND company_id = ?", [roomId, cid]);
+  return getBookings(cid).then((rows) => rows.find((x) => x.id === res.id));
+}
+
+async function updateBookingStatus(payload = {}, companyId) {
+  const cid = toInt(companyId, -1);
+  const id = toInt(payload.id, -1);
+  const status = String(payload.status || '').trim().toLowerCase();
+  const invoiceId = payload.invoiceId ? toInt(payload.invoiceId, null) : null;
+  const allowed = ['booked', 'checked_in', 'checked_out', 'cancelled'];
+  if (cid <= 0 || id <= 0 || !allowed.includes(status)) throw new Error('Booking status update is invalid.');
+  const booking = await get('SELECT id, room_id AS roomId FROM bookings WHERE id = ? AND company_id = ?', [id, cid]);
+  if (!booking) throw new Error('Booking not found.');
+  await run('UPDATE bookings SET status = ?, invoice_id = COALESCE(?, invoice_id) WHERE id = ? AND company_id = ?', [status, invoiceId, id, cid]);
+  if (status === 'checked_out' || status === 'cancelled') await run("UPDATE rooms SET status = 'available' WHERE id = ? AND company_id = ?", [booking.roomId, cid]);
+  if (status === 'checked_in') await run("UPDATE rooms SET status = 'occupied' WHERE id = ? AND company_id = ?", [booking.roomId, cid]);
+  return getBookings(cid).then((rows) => rows.find((x) => x.id === id));
+}
+
+async function getPatients(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  return all(
+    `SELECT id, name, phone, notes, created_at AS createdAt
+     FROM patients
+     WHERE company_id = ?
+     ORDER BY id DESC`,
+    [cid]
+  );
+}
+
+async function createPatient(payload = {}, companyId) {
+  const cid = toInt(companyId, -1);
+  const name = String(payload.name || '').trim();
+  const phone = String(payload.phone || '').trim();
+  const notes = String(payload.notes || '').trim();
+  if (cid <= 0 || !name) throw new Error('Patient name is required.');
+  const createdAt = new Date().toISOString();
+  const res = await run(
+    'INSERT INTO patients (company_id, name, phone, notes, created_at) VALUES (?, ?, ?, ?, ?)',
+    [cid, name, phone, notes, createdAt]
+  );
+  return get('SELECT id, name, phone, notes, created_at AS createdAt FROM patients WHERE id = ?', [res.id]);
+}
+
+async function syncDrugExpiryFromProducts(companyId) {
+  const cid = toInt(companyId, -1);
+  if (cid <= 0) return;
+  await run(
+    `INSERT INTO drug_expiry (company_id, product_id, expiry_date, batch_no, qty, created_at)
+     SELECT p.company_id, p.id, p.expiry_date, COALESCE(p.batch_no, ''), COALESCE(p.quantity, 0), ?
+     FROM products p
+     WHERE p.company_id = ? AND TRIM(COALESCE(p.expiry_date, '')) <> ''
+       AND NOT EXISTS (
+         SELECT 1 FROM drug_expiry d
+         WHERE d.company_id = p.company_id
+           AND d.product_id = p.id
+           AND COALESCE(d.batch_no, '') = COALESCE(p.batch_no, '')
+           AND d.expiry_date = p.expiry_date
+       )`,
+    [new Date().toISOString(), cid]
+  );
+}
+
+async function getDrugExpiry(companyId, daysAhead = 30) {
+  const cid = toInt(companyId, -1);
+  const days = Math.max(1, Math.min(365, toInt(daysAhead, 30)));
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  await syncDrugExpiryFromProducts(cid);
+  const cutoff = new Date(Date.now() + (days * 86400000)).toISOString().slice(0, 10);
+  return all(
+    `SELECT d.id, d.product_id AS productId, p.name AS productName, d.expiry_date AS expiryDate, d.batch_no AS batchNo, d.qty
+     FROM drug_expiry d
+     INNER JOIN products p ON p.id = d.product_id
+     WHERE d.company_id = ? AND d.expiry_date <= ?
+     ORDER BY d.expiry_date ASC`,
+    [cid, cutoff]
+  );
+}
+
+async function getInsightLogs(companyId, limit = 100) {
+  const cid = toInt(companyId, -1);
+  const lim = Math.max(1, Math.min(500, toInt(limit, 100)));
+  if (cid <= 0) throw new Error('A valid company ID is required.');
+  return all(
+    `SELECT id, insight_type AS insightType, metric_name AS metricName, metric_value AS metricValue, baseline_value AS baselineValue, notes, created_at AS createdAt
+     FROM insight_log
+     WHERE company_id = ?
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [cid, lim]
+  );
+}
+
 function parsePhotoDataUrl(dataUrl) {
   const m = String(dataUrl || '').match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i);
   if (!m) throw new Error('Invalid snapshot image format.');
@@ -2957,6 +3310,17 @@ module.exports = {
   updateUserProfileImage,
   authenticateUser,
   changePassword,
+  getRooms,
+  createRoom,
+  getGuests,
+  createGuest,
+  getBookings,
+  createBooking,
+  updateBookingStatus,
+  getPatients,
+  createPatient,
+  getDrugExpiry,
+  getInsightLogs,
   recordClockIn,
   getRecentClockIns,
   getDatabasePath,
