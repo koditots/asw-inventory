@@ -229,19 +229,6 @@ async function queueOrSendInvoiceEmail(companyId, payload = {}) {
     html: String(payload?.html || '').trim(),
     attachments: sanitizeAttachments(payload?.attachments)
   };
-  const online = await hasInternetConnection();
-  if (!online) {
-    const queueId = await db.enqueueEmail({
-      companyId,
-      recipient: emailPayload.to,
-      subject: emailPayload.subject,
-      textBody: emailPayload.text,
-      htmlBody: emailPayload.html,
-      attachments: emailPayload.attachments,
-      purpose: String(payload?.purpose || 'invoice')
-    });
-    return { ok: true, queued: true, queueId };
-  }
   try {
     const sent = await sendEmailWithConfig(config, emailPayload);
     return { ok: true, queued: false, messageId: sent?.messageId || '' };
@@ -310,8 +297,6 @@ async function notifyOutstandingReminder(companyId, invoice) {
 }
 
 async function processQueuedEmails(limit = 10) {
-  const online = await hasInternetConnection();
-  if (!online) return;
   const queueItems = await db.getPendingEmailQueue(limit);
   for (const item of queueItems) {
     try {
@@ -769,20 +754,7 @@ function registerIpcHandlers() {
       smtpPass: decryptSmtpPassword(company.smtpPass),
       smtpSecure: company.smtpSecure
     });
-    const online = await hasInternetConnection();
     const queueIfOffline = payload?.queueIfOffline !== false;
-    if (!online && queueIfOffline) {
-      const queueId = await db.enqueueEmail({
-        companyId,
-        recipient: payload?.to,
-        subject: payload?.subject,
-        textBody: payload?.text,
-        htmlBody: payload?.html,
-        attachments: sanitizeAttachments(payload?.attachments),
-        purpose
-      });
-      return { ok: true, queued: true, queueId };
-    }
     try {
       const result = await sendEmailWithConfig(config, payload || {});
       return { ok: true, queued: false, messageId: result.messageId };
