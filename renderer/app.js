@@ -133,6 +133,29 @@ const apiFromIpc = ipcFallback ? {
 
 const api = window.inventoryApi || window.api || apiFromIpc || {};
 const $ = (id) => document.getElementById(id);
+const nodePath = (() => {
+  try {
+    return typeof window.require === 'function' ? window.require('path') : null;
+  } catch {
+    return null;
+  }
+})();
+const nodeFs = (() => {
+  try {
+    return typeof window.require === 'function' ? window.require('fs') : null;
+  } catch {
+    return null;
+  }
+})();
+const sidebarConfig = (() => {
+  try {
+    if (typeof window.require !== 'function') return null;
+    const loaded = window.require('../config/sidebarConfig');
+    return loaded?.default || loaded;
+  } catch {
+    return null;
+  }
+})();
 
 const state = {
   session: null,
@@ -157,6 +180,7 @@ const state = {
   stream: null,
   clockIns: [],
   dashboardSalesReport: null,
+  currentIndustry: 'general',
   moduleConfig: { industry: 'general', visibleSidebarItems: [], enabledFeatures: {}, labelMap: {}, enabledModules: ['core'] },
   systemConfig: { industryType: 'general', syncEnabled: false, enabledModules: ['core'], featureToggles: {} },
   rooms: [],
@@ -465,6 +489,100 @@ const navSvgs = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2H9a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9h.2a1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1V9c0 .4.2.7.6.9H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6z"/></svg>'
 };
 
+const menuRegistry = {
+  dashboard: { label: 'Dashboard', icon: 'home.svg', route: '/dashboard' },
+  inventory: { label: 'Inventory', icon: 'box.svg', route: '/inventory' },
+  pos: { label: 'POS', icon: 'cart.svg', route: '/pos' },
+  sales: { label: 'Sales', icon: 'chart.svg', route: '/sales' },
+  customers: { label: 'Customers', icon: 'users.svg', route: '/customers' },
+  rooms: { label: 'Rooms', icon: 'bed.svg', route: '/rooms' },
+  bookings: { label: 'Bookings', icon: 'calendar.svg', route: '/bookings' },
+  guests: { label: 'Guests', icon: 'user.svg', route: '/guests' },
+  kitchen_inventory: { label: 'Kitchen', icon: 'food.svg', route: '/kitchen' },
+  billing: { label: 'Billing', icon: 'invoice.svg', route: '/billing' },
+  drug_inventory: { label: 'Drugs', icon: 'pill.svg', route: '/drugs' },
+  patients: { label: 'Patients', icon: 'heart.svg', route: '/patients' },
+  prescriptions: { label: 'Prescriptions', icon: 'file.svg', route: '/prescriptions' },
+  expiry_tracking: { label: 'Expiry', icon: 'alert.svg', route: '/expiry' },
+  expenses: { label: 'Expenses', icon: 'money.svg', route: '/expenses' },
+  reports: { label: 'Reports', icon: 'report.svg', route: '/reports' },
+  settings: { label: 'Settings', icon: 'settings.svg', route: '/settings' },
+  invoices: { label: 'Invoices', icon: 'invoice.svg', route: '/invoices' }
+};
+
+const sectionToMenuKey = {
+  dashboard: 'dashboard',
+  products: 'inventory',
+  categories: 'inventory',
+  suppliers: 'inventory',
+  customers: 'customers',
+  pos: 'pos',
+  invoices: 'invoices',
+  expenses: 'expenses',
+  vendors: 'expenses',
+  income: 'reports',
+  cashflow: 'reports',
+  clockin: 'dashboard',
+  reports: 'reports',
+  company: 'settings',
+  users: 'settings',
+  roles: 'settings',
+  settings: 'settings',
+  rooms: 'rooms',
+  bookings: 'bookings',
+  guests: 'guests',
+  patients: 'patients',
+  drugexpiry: 'expiry_tracking'
+};
+
+const menuKeyToSection = {
+  dashboard: 'dashboard',
+  inventory: 'products',
+  pos: 'pos',
+  sales: 'products',
+  customers: 'customers',
+  rooms: 'rooms',
+  bookings: 'bookings',
+  guests: 'guests',
+  kitchen_inventory: 'products',
+  billing: 'invoices',
+  drug_inventory: 'products',
+  patients: 'patients',
+  prescriptions: 'patients',
+  expiry_tracking: 'drugexpiry',
+  expenses: 'expenses',
+  reports: 'reports',
+  settings: 'settings',
+  invoices: 'invoices'
+};
+
+const sectionPermissionModule = {
+  dashboard: 'dashboard',
+  products: 'products',
+  categories: 'categories',
+  suppliers: 'suppliers',
+  customers: 'customers',
+  pos: 'sales',
+  invoices: 'invoices',
+  expenses: 'expenses',
+  vendors: 'vendors',
+  income: 'income',
+  cashflow: 'cashflow',
+  clockin: 'dashboard',
+  reports: 'reports',
+  company: 'company',
+  users: 'users',
+  roles: 'roles',
+  settings: 'settings',
+  rooms: 'company',
+  bookings: 'company',
+  guests: 'customers',
+  patients: 'customers',
+  drugexpiry: 'products'
+};
+
+const iconCache = new Map();
+
 const menuItemMeta = {
   // Label/icon metadata for custom top menu items.
   'new-invoice': { label: 'New Invoice', icon: navSvgs.invoices },
@@ -673,9 +791,77 @@ function setImgOrPlaceholder(imgEl, srcPath, label = 'User') {
   }
 }
 
+function normalizeIndustry(value) {
+  const industry = String(value || '').trim().toLowerCase();
+  return ['general', 'retail', 'hospitality', 'medical'].includes(industry) ? industry : 'general';
+}
+
+function getCurrentIndustry() {
+  const sessionIndustry = normalizeIndustry(state.currentIndustry || '');
+  if (sessionIndustry !== 'general' || !state.session?.authenticated) return sessionIndustry;
+  return normalizeIndustry(state.company?.industryType || state.systemConfig?.industryType || state.moduleConfig?.industry || 'general');
+}
+
+function getAllowedMenuKeys() {
+  const cfg = sidebarConfig || {};
+  const industry = getCurrentIndustry();
+  const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
+  const fallback = Array.isArray(cfg.general) ? cfg.general : ['dashboard', 'settings'];
+  const list = selected.length ? selected : fallback;
+  return list.length ? list : ['dashboard', 'settings'];
+}
+
+function getAllowedSections() {
+  const keys = getAllowedMenuKeys();
+  const sections = keys.map((key) => menuKeyToSection[key]).filter(Boolean);
+  if (!sections.length) return new Set(['dashboard']);
+  return new Set(sections);
+}
+
+function isSectionAllowed(sectionName) {
+  return getAllowedSections().has(sectionName);
+}
+
+function sectionRoute(sectionName) {
+  const key = sectionToMenuKey[sectionName];
+  return menuRegistry[key]?.route || '/dashboard';
+}
+
+function sectionFromRoute(routePath) {
+  const route = String(routePath || '').trim().toLowerCase();
+  const key = Object.keys(menuRegistry).find((k) => String(menuRegistry[k]?.route || '').toLowerCase() === route);
+  return key ? menuKeyToSection[key] : null;
+}
+
+function getIconSvg(iconFile) {
+  const file = String(iconFile || '').trim();
+  if (!file) return null;
+  if (iconCache.has(file)) return iconCache.get(file);
+  if (!nodeFs || !nodePath) {
+    iconCache.set(file, null);
+    return null;
+  }
+  try {
+    const iconPath = nodePath.join(process.cwd(), 'assets', 'icons', file);
+    if (!nodeFs.existsSync(iconPath)) {
+      iconCache.set(file, null);
+      return null;
+    }
+    const svg = nodeFs.readFileSync(iconPath, 'utf8');
+    iconCache.set(file, svg);
+    return svg;
+  } catch {
+    iconCache.set(file, null);
+    return null;
+  }
+}
+
 function applyNavIcons() {
   document.querySelectorAll('.nav-icon[data-icon]').forEach((el) => {
-    const icon = navSvgs[el.dataset.icon] || navSvgs.dashboard;
+    const section = el.closest('.nav-link')?.dataset.section || '';
+    const menuKey = sectionToMenuKey[section] || 'dashboard';
+    const fileIcon = getIconSvg(menuRegistry[menuKey]?.icon);
+    const icon = fileIcon || navSvgs[el.dataset.icon] || navSvgs.dashboard;
     el.innerHTML = icon;
   });
 }
@@ -785,59 +971,43 @@ async function handleMenuAction(action) {
 }
 
 function setActiveSection(name) {
-  const target = sectionButtons.find((b) => b.dataset.section === name && b.style.display !== 'none');
-  const safeName = target ? name : (sectionButtons.find((b) => b.style.display !== 'none')?.dataset.section || 'dashboard');
+  const allowed = isSectionAllowed(name);
+  const requested = allowed ? name : 'dashboard';
+  const target = sectionButtons.find((b) => b.dataset.section === requested && b.style.display !== 'none');
+  const safeName = target ? requested : (sectionButtons.find((b) => b.style.display !== 'none')?.dataset.section || 'dashboard');
   for (const b of sectionButtons) b.classList.toggle('active', b.dataset.section === safeName);
   for (const s of sections) s.classList.toggle('active', s.id === `section-${safeName}`);
   const active = sectionButtons.find((b) => b.dataset.section === safeName);
   sectionTitle.textContent = active ? active.textContent : 'Dashboard';
+  const route = sectionRoute(safeName);
+  const nextHash = `#${route}`;
+  if (window.location.hash !== nextHash) {
+    window.history.replaceState(null, '', nextHash);
+  }
 }
 
 function applySidebarLabels() {
   const labelMap = state.moduleConfig?.labelMap || {};
   sectionButtons.forEach((btn) => {
     const section = btn.dataset.section;
+    const menuKey = sectionToMenuKey[section] || section;
     const textEl = btn.querySelector('span:last-child');
     if (!textEl) return;
-    textEl.textContent = labelMap[section] || defaultSidebarLabels.get(section) || section;
+    textEl.textContent = labelMap[section] || menuRegistry[menuKey]?.label || defaultSidebarLabels.get(section) || section;
   });
 }
 
 function renderSectionAccess() {
-  const routeMap = {
-    dashboard: 'dashboard',
-    products: 'products',
-    categories: 'categories',
-    suppliers: 'suppliers',
-    customers: 'customers',
-    invoices: 'invoices',
-    expenses: 'expenses',
-    vendors: 'vendors',
-    income: 'income',
-    cashflow: 'cashflow',
-    clockin: 'dashboard',
-    reports: 'reports',
-    company: 'company',
-    users: 'users',
-    roles: 'roles',
-    settings: 'settings',
-    pos: 'sales',
-    bookings: 'company',
-    rooms: 'company',
-    guests: 'customers',
-    patients: 'customers',
-    drugexpiry: 'products'
-  };
-  const visibleItems = Array.isArray(state.moduleConfig?.visibleSidebarItems) && state.moduleConfig.visibleSidebarItems.length
-    ? new Set(state.moduleConfig.visibleSidebarItems)
-    : null;
+  const allowedMenus = new Set(getAllowedMenuKeys());
   sectionButtons.forEach((btn) => {
     const section = btn.dataset.section;
-    const moduleName = routeMap[btn.dataset.section];
+    const menuKey = sectionToMenuKey[section] || section;
+    const moduleName = sectionPermissionModule[section] || 'dashboard';
     const permissionVisible = can(moduleName, 'view');
-    const moduleVisible = !visibleItems || visibleItems.has(section);
+    const moduleVisible = allowedMenus.has(menuKey);
     btn.style.display = permissionVisible && moduleVisible ? '' : 'none';
   });
+  applyNavIcons();
   applySidebarLabels();
   const activeVisible = sectionButtons.find((btn) => btn.classList.contains('active') && btn.style.display !== 'none');
   if (activeVisible) setActiveSection(activeVisible.dataset.section);
@@ -1673,6 +1843,8 @@ function stopCamera() {
 async function refreshSession() {
   state.session = await api.getSession();
   state.companies = state.session?.companies || [];
+  const activeCompany = state.companies.find((c) => Number(c.id) === Number(state.session?.activeCompanyId));
+  state.currentIndustry = normalizeIndustry(activeCompany?.industryType || state.currentIndustry || 'general');
   if (state.session?.authenticated && typeof api.getIndustryModuleConfig === 'function') {
     try {
       state.moduleConfig = await api.getIndustryModuleConfig();
@@ -1733,6 +1905,7 @@ async function refreshData() {
     ? await api.getEmailSettings()
     : { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
   state.categories = categories; state.suppliers = suppliers; state.customers = customers; state.products = products; state.vendors = vendors; state.expenseCategories = expenseCategories; state.incomeCategories = incomeCategories; state.expenses = expenses; state.incomes = incomes; state.wallet = wallet || { currentBalance: 0, lastUpdatedAt: '' }; state.cashflowTransactions = transactions || []; state.company = company; state.invoices = invoices; state.clockIns = clockIns; state.dashboardSalesReport = dashboardSalesReport; state.invoiceSettings = invoiceSettings || { defaultTaxRate: 0, termsConditions: '', includeRevenueInBalance: false }; state.emailSettings = emailSettings || { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false, hasPassword: false };
+  state.currentIndustry = normalizeIndustry(state.company?.industryType || state.systemConfig?.industryType || state.currentIndustry);
   state.rooms = rooms || [];
   state.guests = guests || [];
   state.bookings = bookings || [];
@@ -1828,7 +2001,21 @@ async function resetInvoiceDraft() {
   renderInvoicePreview();
   renderInvoicePaymentHistory([], 0);
 }
+function applyRouteFromHash() {
+  const hash = String(window.location.hash || '').replace(/^#/, '');
+  const normalized = hash.startsWith('/') ? hash : (hash ? `/${hash}` : '/dashboard');
+  const mappedSection = sectionFromRoute(normalized);
+  if (!mappedSection || !isSectionAllowed(mappedSection)) {
+    setActiveSection('dashboard');
+    return;
+  }
+  setActiveSection(mappedSection);
+}
+
 sectionButtons.forEach((b) => b.addEventListener('click', () => setActiveSection(b.dataset.section)));
+window.addEventListener('hashchange', () => {
+  applyRouteFromHash();
+});
 proMenu?.addEventListener('click', async (e) => {
   const rootBtn = e.target.closest('.menu-root-btn');
   if (rootBtn) {
@@ -2410,6 +2597,7 @@ companyCreateForm.addEventListener('submit', async (e) => { e.preventDefault(); 
 companyForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
+    const previousIndustry = normalizeIndustry(state.company?.industryType || state.currentIndustry || 'general');
     const payload = {
       name: companyName.value.trim(),
       address: companyAddress.value.trim(),
@@ -2427,11 +2615,20 @@ companyForm.addEventListener('submit', async (e) => {
     if (!isEmail(payload.email)) throw new Error('Please enter a valid company email.');
     if (payload.accountNumber && !/^\d+$/.test(payload.accountNumber)) throw new Error('Account number must contain digits only.');
     if (!/^#[0-9a-fA-F]{6}$/.test(payload.primaryColor || '')) throw new Error('Primary color must be a valid hex value.');
-    if ((state.company?.industryType || 'general') !== payload.industryType) {
+    if (previousIndustry !== payload.industryType) {
       const ok = window.confirm('Changing industry can alter visible modules and labels. Continue?');
       if (!ok) return;
     }
-    state.company = await api.saveActiveCompany(payload); renderCompany(); showStatus('Company setup saved.');
+    state.company = await api.saveActiveCompany(payload);
+    const nextIndustry = normalizeIndustry(state.company?.industryType || payload.industryType);
+    if (previousIndustry !== nextIndustry) {
+      iconCache.clear();
+      await safeRefresh();
+      setActiveSection('dashboard');
+    } else {
+      renderCompany();
+    }
+    showStatus('Company setup saved.');
   } catch (err) { showStatus(err.message || 'Unable to save company.', 'error'); }
 });
 uploadLogoBtn.addEventListener('click', async () => { try { const r = await api.selectCompanyLogo(); if (r.cancelled) return showStatus('Logo upload cancelled.', 'warning'); companyLogoPath.value = r.path; companyLogoPreview.src = fileUrl(r.path); showStatus('Logo selected. Save company to persist.'); } catch (err) { showStatus(err.message || 'Logo upload failed.', 'error'); } });
@@ -2605,6 +2802,7 @@ autoBackupNowBtn?.addEventListener('click', async () => { try { await api.runAut
 systemConfigForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
+    const previousIndustry = normalizeIndustry(state.company?.industryType || state.currentIndustry || 'general');
     const nextIndustry = String(systemIndustryType.value || 'general');
     const industryChanged = nextIndustry !== String(state.company?.industryType || 'general');
     if (industryChanged) {
@@ -2625,7 +2823,12 @@ systemConfigForm?.addEventListener('submit', async (e) => {
       syncEnabled: Boolean(systemSyncEnabled.checked),
       enabledModules: enabledModules.length ? enabledModules : ['core']
     };
+    if (previousIndustry !== normalizeIndustry(nextIndustry)) {
+      iconCache.clear();
+      state.moduleConfig = {};
+    }
     await safeRefresh();
+    setActiveSection('dashboard');
     showStatus('System configuration saved.');
   } catch (err) { showStatus(err.message || 'Unable to save system configuration.', 'error'); }
 });
@@ -2649,7 +2852,7 @@ changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault();
     await resetInvoiceDraft();
     await refreshSession();
     if (state.session?.authenticated) {
-      if (state.session.clockedIn) { await refreshData(); startDashboardLiveUpdates(); showStatus('ASW Inventory ready.'); }
+      if (state.session.clockedIn) { await refreshData(); applyRouteFromHash(); startDashboardLiveUpdates(); showStatus('ASW Inventory ready.'); }
       else { await startCamera(); showStatus('Please clock in to continue.', 'warning'); }
     } else showStatus('Please login to continue.', 'warning');
   } catch (err) {
