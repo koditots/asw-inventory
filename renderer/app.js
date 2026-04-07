@@ -34,6 +34,7 @@ const apiFromIpc = ipcFallback ? {
   deleteCompany: (id) => ipcFallback.invoke('companies:delete', { id }),
   getActiveCompany: () => ipcFallback.invoke('company:getActive'),
   saveActiveCompany: (payload) => ipcFallback.invoke('company:saveActive', payload),
+  confirmCompanyIndustry: (industryType) => ipcFallback.invoke('company:confirmIndustry', { industryType }),
   selectCompanyLogo: () => ipcFallback.invoke('company:selectLogo'),
   selectCompanySignature: () => ipcFallback.invoke('company:selectSignature'),
   createUser: (payload) => ipcFallback.invoke('users:create', payload),
@@ -408,6 +409,8 @@ const dashboardSection = $('section-dashboard');
 
 const companyCreateForm = $('companyCreateForm');
 const newCompanyName = $('newCompanyName');
+const newCompanyIndustryType = $('newCompanyIndustryType');
+const newCompanyIndustryConfirm = $('newCompanyIndustryConfirm');
 const companyForm = $('companyForm');
 const companyName = $('companyName');
 const companyAddress = $('companyAddress');
@@ -1879,12 +1882,32 @@ function renderCompany() {
   companyBankName.value = c.bankName || '';
   companyAccountNumber.value = c.accountNumber || '';
   companyPrimaryColor.value = c.primaryColor || '#f4c214';
-  if (companyIndustryType) companyIndustryType.value = c.industryType || 'general';
+  if (companyIndustryType) {
+    companyIndustryType.value = c.industryType || 'general';
+    companyIndustryType.disabled = true;
+  }
   companyPaymentMethods.value = Array.isArray(c.paymentMethods) ? c.paymentMethods.join(', ') : '';
   companyLogoPath.value = c.logoPath || '';
   companySignaturePath.value = c.signaturePath || '';
   if (c.logoPath) companyLogoPreview.src = fileUrl(c.logoPath); else companyLogoPreview.removeAttribute('src');
   if (c.signaturePath) companySignaturePreview.src = fileUrl(c.signaturePath); else companySignaturePreview.removeAttribute('src');
+}
+
+async function handleLegacyIndustryConfirmation() {
+  const c = state.company || {};
+  if (!c?.industryNeedsConfirmation || !state.session?.user?.isAdmin) return;
+  const selected = window.prompt('Please confirm your business industry (retail, hospitality, medical, general):', c.industryType || 'general');
+  if (!selected) return;
+  const normalized = normalizeIndustry(selected);
+  try {
+    const confirmed = await api.confirmCompanyIndustry(normalized);
+    state.company = confirmed || state.company;
+    state.currentIndustry = normalizeIndustry(state.company?.industryType || normalized);
+    await safeRefresh();
+    showStatus('Industry confirmed and locked permanently.');
+  } catch (err) {
+    showStatus(err.message || 'Unable to confirm industry.', 'error');
+  }
 }
 
 function renderSystemConfiguration() {
@@ -2107,6 +2130,7 @@ async function refreshData() {
   state.insights = insights || [];
   state.roles = can('roles', 'view') ? await api.getRoles() : [];
   state.users = can('users', 'view') ? await api.getUsers() : [];
+  await handleLegacyIndustryConfirmation();
   if (!state.invoiceDraft.invoiceNumber) await refreshInvoiceNumber();
   if (state.invoiceDraft.useDefaultTax) invoiceTaxPercent.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
   renderLookups(); renderPosLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderVendors(); renderExpenses(); renderIncome(); renderCashflow(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); applyDashboardWidgetVisibility(); renderClockInGallery(state.clockIns); renderCompany(); renderSystemConfiguration(); renderRooms(); renderGuests(); renderBookings(); renderPatients(); renderDrugExpiry(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); applyReportVisibility(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); renderSectionAccess(); applyFormAccess();
@@ -2786,11 +2810,26 @@ generateReportBtn.addEventListener('click', async () => {
 });
 exportReportBtn.addEventListener('click', async () => { try { if (!state.report) throw new Error('Generate report first.'); const res = await api.exportSalesReportCsv(state.report); if (res.cancelled) return showStatus('CSV export cancelled.', 'warning'); showStatus(`Report exported: ${res.filePath}`); } catch (err) { showStatus(err.message || 'CSV export failed.', 'error'); } });
 
-companyCreateForm.addEventListener('submit', async (e) => { e.preventDefault(); try { const name = newCompanyName.value.trim(); if (!name) throw new Error('Company name is required.'); await api.createCompany({ name }); newCompanyName.value = ''; await safeRefresh(); showStatus('Company created.'); } catch (err) { showStatus(err.message || 'Unable to create company.', 'error'); } });
+companyCreateForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const name = newCompanyName.value.trim();
+    const industryType = String(newCompanyIndustryType?.value || '').trim();
+    const industryConfirmed = Boolean(newCompanyIndustryConfirm?.checked);
+    if (!name) throw new Error('Company name is required.');
+    if (!industryType) throw new Error('Industry selection is required.');
+    if (!industryConfirmed) throw new Error('Please confirm that industry cannot be changed after setup.');
+    await api.createCompany({ name, industryType, industryConfirmed });
+    newCompanyName.value = '';
+    if (newCompanyIndustryType) newCompanyIndustryType.value = '';
+    if (newCompanyIndustryConfirm) newCompanyIndustryConfirm.checked = false;
+    await safeRefresh();
+    showStatus('Company created.');
+  } catch (err) { showStatus(err.message || 'Unable to create company.', 'error'); }
+});
 companyForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    const previousIndustry = normalizeIndustry(state.company?.industryType || state.currentIndustry || 'general');
     const payload = {
       name: companyName.value.trim(),
       address: companyAddress.value.trim(),
@@ -2801,26 +2840,14 @@ companyForm.addEventListener('submit', async (e) => {
       bankName: companyBankName.value.trim(),
       accountNumber: companyAccountNumber.value.trim(),
       primaryColor: companyPrimaryColor.value,
-      industryType: String(companyIndustryType?.value || 'general'),
       paymentMethods: companyPaymentMethods.value.split(',').map((x) => x.trim()).filter(Boolean)
     };
     if (!payload.name) throw new Error('Company name is required.');
     if (!isEmail(payload.email)) throw new Error('Please enter a valid company email.');
     if (payload.accountNumber && !/^\d+$/.test(payload.accountNumber)) throw new Error('Account number must contain digits only.');
     if (!/^#[0-9a-fA-F]{6}$/.test(payload.primaryColor || '')) throw new Error('Primary color must be a valid hex value.');
-    if (previousIndustry !== payload.industryType) {
-      const ok = window.confirm('Changing industry can alter visible modules and labels. Continue?');
-      if (!ok) return;
-    }
     state.company = await api.saveActiveCompany(payload);
-    const nextIndustry = normalizeIndustry(state.company?.industryType || payload.industryType);
-    if (previousIndustry !== nextIndustry) {
-      iconCache.clear();
-      await safeRefresh();
-      setActiveSection('dashboard');
-    } else {
-      renderCompany();
-    }
+    renderCompany();
     showStatus('Company setup saved.');
   } catch (err) { showStatus(err.message || 'Unable to save company.', 'error'); }
 });
@@ -2996,16 +3023,9 @@ autoBackupNowBtn?.addEventListener('click', async () => { try { await api.runAut
 systemConfigForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    const previousIndustry = normalizeIndustry(state.company?.industryType || state.currentIndustry || 'general');
-    const nextIndustry = String(systemIndustryType.value || 'general');
-    const industryChanged = nextIndustry !== String(state.company?.industryType || 'general');
-    if (industryChanged) {
-      const ok = window.confirm('This will switch the company industry and adapt navigation labels/modules. Continue?');
-      if (!ok) return;
-    }
     const enabledModules = systemEnabledModules.value.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
     const updated = await api.updateSystemConfiguration({
-      industryType: nextIndustry,
+      industryType: state.company?.industryType || 'general',
       enabledModules: enabledModules.length ? enabledModules : ['core'],
       syncEnabled: Boolean(systemSyncEnabled.checked)
     });
@@ -3013,14 +3033,10 @@ systemConfigForm?.addEventListener('submit', async (e) => {
     state.moduleConfig = updated?.moduleConfig || state.moduleConfig;
     state.systemConfig = {
       ...(state.systemConfig || {}),
-      industryType: nextIndustry,
+      industryType: state.company?.industryType || 'general',
       syncEnabled: Boolean(systemSyncEnabled.checked),
       enabledModules: enabledModules.length ? enabledModules : ['core']
     };
-    if (previousIndustry !== normalizeIndustry(nextIndustry)) {
-      iconCache.clear();
-      state.moduleConfig = {};
-    }
     await safeRefresh();
     setActiveSection('dashboard');
     showStatus('System configuration saved.');

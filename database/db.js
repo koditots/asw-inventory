@@ -144,6 +144,8 @@ async function migrate() {
     smtp_user TEXT NOT NULL DEFAULT '',
     smtp_pass TEXT NOT NULL DEFAULT '',
     smtp_secure INTEGER NOT NULL DEFAULT 0,
+    industry_locked INTEGER NOT NULL DEFAULT 1,
+    industry_needs_confirmation INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )`);
 
@@ -417,6 +419,20 @@ async function migrate() {
     sent_at TEXT
   )`);
   await run('CREATE INDEX IF NOT EXISTS idx_email_queue_company_status ON email_queue(company_id, status, created_at)');
+  await run(`CREATE TRIGGER IF NOT EXISTS trg_company_industry_insert
+    BEFORE INSERT ON company
+    FOR EACH ROW
+    WHEN NEW.industry_type IS NULL OR LOWER(TRIM(NEW.industry_type)) NOT IN ('retail', 'hospitality', 'medical', 'general')
+    BEGIN
+      SELECT RAISE(ABORT, 'Invalid industry type.');
+    END`);
+  await run(`CREATE TRIGGER IF NOT EXISTS trg_company_industry_update
+    BEFORE UPDATE OF industry_type ON company
+    FOR EACH ROW
+    WHEN NEW.industry_type IS NULL OR LOWER(TRIM(NEW.industry_type)) NOT IN ('retail', 'hospitality', 'medical', 'general')
+    BEGIN
+      SELECT RAISE(ABORT, 'Invalid industry type.');
+    END`);
 
   await run(`CREATE TABLE IF NOT EXISTS rooms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -500,6 +516,8 @@ async function migrate() {
   await ensureCol('company', 'smtp_user', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('company', 'smtp_pass', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('company', 'smtp_secure', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureCol('company', 'industry_locked', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureCol('company', 'industry_needs_confirmation', 'INTEGER NOT NULL DEFAULT 0');
   await ensureCol('sales', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('sales', 'customer_id', 'INTEGER');
   await ensureCol('sales', 'created_by', 'INTEGER');
@@ -596,9 +614,13 @@ async function migrate() {
   await run("UPDATE invoices SET notes = '' WHERE notes IS NULL");
   await run("UPDATE customers SET notes = '' WHERE notes IS NULL");
   await run("UPDATE customers SET tags = '' WHERE tags IS NULL");
+  await run("UPDATE company SET industry_needs_confirmation = 1, industry_locked = 0 WHERE industry_type IS NULL OR TRIM(industry_type) = ''");
   await run("UPDATE company SET industry_type = 'general' WHERE industry_type IS NULL OR TRIM(industry_type) = ''");
   await run("UPDATE company SET industry_type = LOWER(TRIM(industry_type))");
   await run("UPDATE company SET industry_type = 'general' WHERE industry_type NOT IN ('retail', 'hospitality', 'medical', 'general')");
+  await run("UPDATE company SET industry_locked = 1 WHERE industry_locked IS NULL");
+  await run("UPDATE company SET industry_needs_confirmation = 0 WHERE industry_needs_confirmation IS NULL");
+  await run("UPDATE company SET industry_needs_confirmation = 0, industry_locked = 1 WHERE industry_type IS NOT NULL AND TRIM(industry_type) <> '' AND industry_needs_confirmation NOT IN (0,1)");
   await run("UPDATE settings SET sync_enabled = 0 WHERE sync_enabled IS NULL");
   await run("UPDATE settings SET enabled_modules = '[\"core\"]' WHERE enabled_modules IS NULL OR TRIM(enabled_modules) = ''");
   await run("UPDATE settings SET feature_toggles = '{}' WHERE feature_toggles IS NULL OR TRIM(feature_toggles) = ''");
@@ -797,6 +819,8 @@ function normalizeCompany(row) {
     smtpPort: toInt(row.smtp_port, 587),
     smtpUser: String(row.smtp_user || ''),
     smtpSecure: Number(row.smtp_secure || 0) === 1,
+    industryLocked: Number(row.industry_locked || 0) === 1,
+    industryNeedsConfirmation: Number(row.industry_needs_confirmation || 0) === 1,
     smtpPass: ''
   };
 }
@@ -823,7 +847,7 @@ async function getCompaniesForUser(user) {
   return rows.map(normalizeCompany);
 }
 
-function mapCompanyInput(payload, fallback = {}) {
+function mapCompanyInput(payload, fallback = {}, options = {}) {
   const name = String(payload.name ?? fallback.name ?? '').trim();
   const address = String(payload.address ?? fallback.address ?? '').trim();
   const phone = String(payload.phone ?? fallback.phone ?? '').trim();
@@ -834,6 +858,7 @@ function mapCompanyInput(payload, fallback = {}) {
   const accountNumber = String(payload.accountNumber ?? fallback.accountNumber ?? '').trim();
   const primaryColorRaw = String(payload.primaryColor ?? fallback.primaryColor ?? '#f4c214').trim();
   const primaryColor = isHexColor(primaryColorRaw) ? primaryColorRaw : '#f4c214';
+  const industryProvided = payload.industryType !== undefined && payload.industryType !== null && String(payload.industryType).trim() !== '';
   const industryType = normalizeIndustryType(payload.industryType ?? fallback.industryType ?? DEFAULT_INDUSTRY);
   const smtpHost = String(payload.smtpHost ?? fallback.smtpHost ?? '').trim();
   const smtpPortRaw = payload.smtpPort ?? fallback.smtpPort ?? 587;
@@ -845,6 +870,7 @@ function mapCompanyInput(payload, fallback = {}) {
   if (!name) throw new Error('Company name is required.');
   if (!isEmail(email)) throw new Error('Please provide a valid company email.');
   if (!INDUSTRY_TYPES.includes(industryType)) throw new Error('Industry type is invalid.');
+  if (options?.requireIndustrySelection && !industryProvided) throw new Error('Industry selection is required.');
   if (accountNumber && !/^\d+$/.test(accountNumber)) throw new Error('Account number must contain only digits.');
   if (!Number.isFinite(smtpPort) || smtpPort <= 0 || smtpPort > 65535) throw new Error('SMTP port must be between 1 and 65535.');
   if (smtpUser && !isEmail(smtpUser)) throw new Error('SMTP user must be a valid email address.');
@@ -857,10 +883,12 @@ function normalizePaymentMethods(value) {
 }
 
 async function createCompany(payload) {
-  const input = mapCompanyInput(payload || {});
+  const input = mapCompanyInput(payload || {}, {}, { requireIndustrySelection: true });
+  const industryConfirmed = Boolean(payload?.industryConfirmed);
+  if (!industryConfirmed) throw new Error('Please confirm the selected industry before creating company.');
   const result = await run(
-    `INSERT INTO company (name, address, phone, email, logo_path, signature_path, bank_name, account_number, payment_methods, primary_color, industry_type, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO company (name, address, phone, email, logo_path, signature_path, bank_name, account_number, payment_methods, primary_color, industry_type, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, industry_locked, industry_needs_confirmation, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
     [
       input.name,
       input.address,
@@ -943,6 +971,13 @@ async function updateCompany(companyId, payload) {
     smtpPass: existingRow.smtp_pass,
     smtpSecure: Number(existingRow.smtp_secure || 0) === 1
   });
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'industryType')) {
+    const requestedIndustry = normalizeIndustryType(payload.industryType);
+    const existingIndustry = normalizeIndustryType(existingRow.industry_type);
+    if (requestedIndustry !== existingIndustry) {
+      throw new Error('Industry cannot be modified after company creation');
+    }
+  }
   await run(
     `UPDATE company
      SET name = ?, address = ?, phone = ?, email = ?, logo_path = ?, signature_path = ?, bank_name = ?, account_number = ?, payment_methods = ?, primary_color = ?, industry_type = ?, smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?, smtp_secure = ?
@@ -966,6 +1001,22 @@ async function updateCompany(companyId, payload) {
       input.smtpSecure ? 1 : 0,
       id
     ]
+  );
+  return getCompanyById(id);
+}
+
+async function confirmCompanyIndustry(companyId, industryType) {
+  const id = toInt(companyId, -1);
+  if (id <= 0) throw new Error('A valid company ID is required.');
+  const row = await get('SELECT id, industry_locked AS industryLocked FROM company WHERE id = ?', [id]);
+  if (!row) throw new Error('Company not found.');
+  if (Number(row.industryLocked || 0) === 1) {
+    throw new Error('Industry cannot be modified after company creation');
+  }
+  const normalized = normalizeIndustryType(industryType);
+  await run(
+    'UPDATE company SET industry_type = ?, industry_locked = 1, industry_needs_confirmation = 0 WHERE id = ?',
+    [normalized, id]
   );
   return getCompanyById(id);
 }
@@ -3256,6 +3307,7 @@ module.exports = {
   updateCompanySettings,
   createCompany,
   updateCompany,
+  confirmCompanyIndustry,
   updateCompanyEmailSetup,
   deleteCompany,
   createCategory,

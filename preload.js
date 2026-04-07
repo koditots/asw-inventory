@@ -31,6 +31,7 @@ const inventoryApi = {
   deleteCompany: (id) => ipcRenderer.invoke('companies:delete', { id }),
   getActiveCompany: () => ipcRenderer.invoke('company:getActive'),
   saveActiveCompany: (payload) => ipcRenderer.invoke('company:saveActive', payload),
+  confirmCompanyIndustry: (industryType) => ipcRenderer.invoke('company:confirmIndustry', { industryType }),
   selectCompanyLogo: () => ipcRenderer.invoke('company:selectLogo'),
   selectCompanySignature: () => ipcRenderer.invoke('company:selectSignature'),
 

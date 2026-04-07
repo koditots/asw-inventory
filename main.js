@@ -961,7 +961,17 @@ function registerIpcHandlers() {
   ipcMain.handle('company:saveActive', async (_event, payload) => {
     requireClockIn();
     requirePermission('company', 'edit');
+    if (payload && Object.prototype.hasOwnProperty.call(payload, 'industryType')) {
+      const current = await db.getCompanyById(getActiveCompanyId());
+      if (String(payload.industryType || '').trim().toLowerCase() !== String(current?.industryType || '').trim().toLowerCase()) {
+        throw new Error('Industry cannot be modified after company creation');
+      }
+    }
     return db.updateCompany(getActiveCompanyId(), payload || {});
+  });
+  ipcMain.handle('company:confirmIndustry', async (_event, payload) => {
+    ensureAdmin();
+    return db.confirmCompanyIndustry(getActiveCompanyId(), payload?.industryType);
   });
   ipcMain.handle('company:selectLogo', async () => {
     requirePermission('company', 'edit');
@@ -1008,8 +1018,11 @@ function registerIpcHandlers() {
     ensureAdmin();
     const activeCompanyId = getActiveCompanyId();
     const nextIndustry = normalizeIndustryType(payload?.industryType);
+    const currentCompany = await db.getCompanyById(activeCompanyId);
+    if (nextIndustry !== normalizeIndustryType(currentCompany?.industryType)) {
+      throw new Error('Industry cannot be modified after company creation');
+    }
     const currentSettings = await db.getCompanySettings(activeCompanyId);
-    await db.updateCompany(activeCompanyId, { industryType: nextIndustry });
     const updatedSettings = await db.updateCompanySettings(activeCompanyId, {
       ...currentSettings,
       syncEnabled: payload?.syncEnabled ?? currentSettings.syncEnabled,

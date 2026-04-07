@@ -939,6 +939,22 @@
                   <label class="form-label" for="newCompanyName">New Company Name</label>
                   <input id="newCompanyName" class="form-control" type="text" maxlength="140" />
                 </div>
+                <div class="col-md-4">
+                  <label class="form-label" for="newCompanyIndustryType">Industry Type</label>
+                  <select id="newCompanyIndustryType" class="form-select" required>
+                    <option value="" selected disabled>Select Industry</option>
+                    <option value="retail">Retail</option>
+                    <option value="hospitality">Hospitality</option>
+                    <option value="medical">Medical</option>
+                    <option value="general">General</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input id="newCompanyIndustryConfirm" class="form-check-input" type="checkbox" />
+                    <label class="form-check-label" for="newCompanyIndustryConfirm">Your selected industry will define system features and cannot be changed later.</label>
+                  </div>
+                </div>
                 <div class="col-md-4 d-flex align-items-end">
                   <button type="submit" class="btn btn-outline-dark w-100">Create Company</button>
                 </div>
@@ -975,12 +991,13 @@
                 </div>
                 <div class="col-md-6">
                   <label class="form-label" for="companyIndustryType">Industry Type</label>
-                  <select id="companyIndustryType" class="form-select">
+                  <select id="companyIndustryType" class="form-select" disabled>
                     <option value="general">General</option>
                     <option value="retail">Retail</option>
                     <option value="hospitality">Hospitality</option>
                     <option value="medical">Medical</option>
                   </select>
+                  <small class="text-muted">Industry cannot be changed after setup.</small>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label" for="companyBankName">Bank Name</label>
@@ -1194,12 +1211,13 @@
               <form id="systemConfigForm" class="row g-2" novalidate>
                 <div class="col-md-6">
                   <label class="form-label" for="systemIndustryType">Industry Type</label>
-                  <select id="systemIndustryType" class="form-select">
+                  <select id="systemIndustryType" class="form-select" disabled>
                     <option value="general">General</option>
                     <option value="retail">Retail</option>
                     <option value="hospitality">Hospitality</option>
                     <option value="medical">Medical</option>
                   </select>
+                  <small class="text-muted">Industry cannot be changed after setup.</small>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label" for="systemEnabledModules">Enabled Modules (comma-separated)</label>
