@@ -156,6 +156,33 @@ const sidebarConfig = (() => {
     return null;
   }
 })();
+const dashboardConfig = (() => {
+  try {
+    if (typeof window.require !== 'function') return null;
+    const loaded = window.require('../config/dashboardConfig');
+    return loaded?.default || loaded;
+  } catch {
+    return null;
+  }
+})();
+const reportConfig = (() => {
+  try {
+    if (typeof window.require !== 'function') return null;
+    const loaded = window.require('../config/reportConfig');
+    return loaded?.default || loaded;
+  } catch {
+    return null;
+  }
+})();
+const rolePermissions = (() => {
+  try {
+    if (typeof window.require !== 'function') return null;
+    const loaded = window.require('../config/rolePermissions');
+    return loaded?.default || loaded;
+  } catch {
+    return null;
+  }
+})();
 
 const state = {
   session: null,
@@ -181,6 +208,7 @@ const state = {
   clockIns: [],
   dashboardSalesReport: null,
   currentIndustry: 'general',
+  currentUserRole: 'admin',
   moduleConfig: { industry: 'general', visibleSidebarItems: [], enabledFeatures: {}, labelMap: {}, enabledModules: ['core'] },
   systemConfig: { industryType: 'general', syncEnabled: false, enabledModules: ['core'], featureToggles: {} },
   rooms: [],
@@ -375,6 +403,8 @@ const reportRevenueByCustomerBody = $('reportRevenueByCustomerBody');
 const reportExpenseByCategoryBody = $('reportExpenseByCategoryBody');
 const reportExpenseByVendorBody = $('reportExpenseByVendorBody');
 const reportIncomeByCategoryBody = $('reportIncomeByCategoryBody');
+const reportsSection = $('section-reports');
+const dashboardSection = $('section-dashboard');
 
 const companyCreateForm = $('companyCreateForm');
 const newCompanyName = $('newCompanyName');
@@ -400,6 +430,7 @@ const userIdField = $('userIdField');
 const userUsername = $('userUsername');
 const userPassword = $('userPassword');
 const userIsAdmin = $('userIsAdmin');
+const userBusinessRole = $('userBusinessRole');
 const userRoleId = $('userRoleId');
 const userIsActive = $('userIsActive');
 const userAssignedCompanies = $('userAssignedCompanies');
@@ -796,6 +827,15 @@ function normalizeIndustry(value) {
   return ['general', 'retail', 'hospitality', 'medical'].includes(industry) ? industry : 'general';
 }
 
+function normalizeUserRole(value) {
+  const role = String(value || '').trim().toLowerCase();
+  return ['admin', 'manager', 'staff'].includes(role) ? role : 'admin';
+}
+
+function getCurrentUserRole() {
+  return normalizeUserRole(state.currentUserRole || state.session?.user?.userRole || (state.session?.user?.isAdmin ? 'admin' : 'manager'));
+}
+
 function getCurrentIndustry() {
   const sessionIndustry = normalizeIndustry(state.currentIndustry || '');
   if (sessionIndustry !== 'general' || !state.session?.authenticated) return sessionIndustry;
@@ -807,8 +847,13 @@ function getAllowedMenuKeys() {
   const industry = getCurrentIndustry();
   const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
   const fallback = Array.isArray(cfg.general) ? cfg.general : ['dashboard', 'settings'];
-  const list = selected.length ? selected : fallback;
-  return list.length ? list : ['dashboard', 'settings'];
+  const industryMenus = selected.length ? selected : fallback;
+  const role = getCurrentUserRole();
+  const roleRules = rolePermissions || {};
+  const roleAllowed = Array.isArray(roleRules[role]) ? roleRules[role] : ['*'];
+  const list = industryMenus.filter((menu) => roleAllowed.includes('*') || roleAllowed.includes(menu));
+  if (!list.length) return ['dashboard'];
+  return list;
 }
 
 function getAllowedSections() {
@@ -820,6 +865,32 @@ function getAllowedSections() {
 
 function isSectionAllowed(sectionName) {
   return getAllowedSections().has(sectionName);
+}
+
+function getAllowedDashboardWidgets() {
+  const cfg = dashboardConfig || {};
+  const industry = getCurrentIndustry();
+  const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
+  const fallback = Array.isArray(cfg.general) ? cfg.general : ['wallet_balance'];
+  const industryWidgets = selected.length ? selected : fallback;
+  const role = getCurrentUserRole();
+  const roleWidgetMap = {
+    admin: ['*'],
+    manager: ['wallet_balance', 'total_sales', 'today_sales', 'expenses', 'recent_transactions', 'top_products', 'low_stock_alert', 'recent_sales', 'active_bookings', 'room_occupancy', 'today_checkins', 'today_checkouts', 'patients_today', 'low_drug_stock', 'expiring_drugs'],
+    staff: ['today_sales', 'recent_sales', 'wallet_balance']
+  };
+  const allowedByRole = roleWidgetMap[role] || ['wallet_balance'];
+  const widgets = industryWidgets.filter((w) => allowedByRole.includes('*') || allowedByRole.includes(w));
+  return widgets.length ? widgets : ['wallet_balance'];
+}
+
+function getAllowedReports() {
+  const cfg = reportConfig || {};
+  const industry = getCurrentIndustry();
+  const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
+  const fallback = Array.isArray(cfg.general) ? cfg.general : ['sales_report'];
+  const reports = selected.length ? selected : fallback;
+  return reports.length ? reports : ['sales_report'];
 }
 
 function sectionRoute(sectionName) {
@@ -1466,12 +1537,13 @@ function renderUsers() {
   for (const c of state.companies) userAssignedCompanies.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
   userRoleId.innerHTML = '<option value="">No specific role (full default)</option>';
   for (const r of state.roles) userRoleId.insertAdjacentHTML('beforeend', `<option value="${r.id}">${r.roleName}</option>`);
+  if (userBusinessRole) userBusinessRole.value = 'staff';
   userProfilePreview.removeAttribute('src');
   if (!visible) return;
   if (!state.users.length) return (usersTableBody.innerHTML = '<tr><td colspan="5">No users available.</td></tr>');
   for (const u of state.users) {
     const names = state.companies.filter((c) => u.assignedCompanies.includes(c.id)).map((c) => c.name).join(', ') || 'None';
-    const roleLabel = u.isAdmin ? 'Admin' : (u.roleName || 'Standard');
+    const roleLabel = u.isAdmin ? 'Admin' : `${String(u.userRole || 'staff').charAt(0).toUpperCase()}${String(u.userRole || 'staff').slice(1)}`;
     usersTableBody.insertAdjacentHTML('beforeend', `<tr><td>${u.id}</td><td><div class="d-flex align-items-center gap-2"><img class="user-profile-preview" src="${getAvatarPath(u.profileImagePath)}" alt="${u.username}" /><span>${u.username}</span></div></td><td>${roleLabel}${u.isActive ? '' : ' (Disabled)'}</td><td>${names}</td><td>${can('users', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-user" data-id="${u.id}">Edit</button>` : ''} ${can('users', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-user" data-id="${u.id}">Delete</button>` : ''} ${can('users', 'edit') ? `<button class="btn btn-sm btn-outline-warning" data-action="reset-password" data-id="${u.id}">Reset Password</button>` : ''}</td></tr>`);
   }
 }
@@ -1651,6 +1723,124 @@ function renderDashboard(stats, salesReport = null) {
       }).join('');
     }
   }
+}
+
+function toggleBlockByAnchor(anchorEl, visible) {
+  if (!anchorEl) return;
+  const block = anchorEl.closest('.col-lg-4, .col-lg-6, .col-lg-3, .col-12, .panel-card, article') || anchorEl;
+  block.style.display = visible ? '' : 'none';
+}
+
+function getDashboardDynamicContainer() {
+  if (!dashboardSection) return null;
+  let container = document.getElementById('dashboardDynamicWidgets');
+  if (container) return container;
+  container = document.createElement('div');
+  container.id = 'dashboardDynamicWidgets';
+  container.className = 'row g-3 mt-2';
+  dashboardSection.appendChild(container);
+  return container;
+}
+
+function renderDynamicDashboardWidgets() {
+  const container = getDashboardDynamicContainer();
+  if (!container) return;
+  const widgets = getAllowedDashboardWidgets();
+  const has = (key) => widgets.includes(key);
+  container.innerHTML = '';
+  const addCard = (title, value) => {
+    container.insertAdjacentHTML('beforeend', `<div class="col-lg-4"><article class="metric-card"><p>${title}</p><h3>${value}</h3></article></div>`);
+  };
+  if (has('active_bookings')) addCard('Active Bookings', String((state.bookings || []).filter((b) => ['booked', 'checked_in'].includes(String(b.status || '').toLowerCase())).length));
+  if (has('room_occupancy')) {
+    const occupied = (state.rooms || []).filter((r) => String(r.status || '').toLowerCase() === 'occupied').length;
+    const total = Math.max(1, (state.rooms || []).length);
+    addCard('Room Occupancy', `${Math.round((occupied / total) * 100)}%`);
+  }
+  if (has('today_checkins')) {
+    const today = new Date().toISOString().slice(0, 10);
+    addCard('Today Check-ins', String((state.bookings || []).filter((b) => String(b.checkInDate || '').slice(0, 10) === today).length));
+  }
+  if (has('today_checkouts')) {
+    const today = new Date().toISOString().slice(0, 10);
+    addCard('Today Check-outs', String((state.bookings || []).filter((b) => String(b.checkOutDate || '').slice(0, 10) === today).length));
+  }
+  if (has('patients_today')) {
+    const today = new Date().toISOString().slice(0, 10);
+    addCard('Patients Today', String((state.patients || []).filter((p) => String(p.createdAt || '').slice(0, 10) === today).length));
+  }
+  if (has('expiring_drugs')) addCard('Expiring Drugs', String((state.drugExpiry || []).length));
+  if (has('low_drug_stock')) {
+    const lowDrug = (state.products || []).filter((p) => Number(p.quantity || 0) <= Number(p.minStock || 0)).length;
+    addCard('Low Drug Stock', String(lowDrug));
+  }
+  if (has('recent_prescriptions')) addCard('Recent Prescriptions', 'Coming Soon');
+}
+
+function applyDashboardWidgetVisibility() {
+  const widgets = getAllowedDashboardWidgets();
+  const has = (key) => widgets.includes(key);
+  toggleBlockByAnchor(walletBalanceEl, has('wallet_balance'));
+  toggleBlockByAnchor(totalSalesEl, has('total_sales') || has('today_sales'));
+  toggleBlockByAnchor(totalTransactionsEl, has('recent_transactions') || has('recent_sales'));
+  toggleBlockByAnchor(lowStockListEl, has('low_stock_alert') || has('low_drug_stock'));
+  toggleBlockByAnchor(dashboardTopProductsBody, has('top_products'));
+  toggleBlockByAnchor(dashboardSalesChart, has('recent_sales') || has('today_sales') || has('total_sales'));
+  toggleBlockByAnchor(recentActivitiesList, has('recent_transactions'));
+  toggleBlockByAnchor(walletOutflowEl, has('expenses'));
+  renderDynamicDashboardWidgets();
+}
+
+function getReportGroups() {
+  return {
+    sales_report: [
+      reportTotalRevenue?.closest('.col-lg-4'),
+      reportTotalTransactions?.closest('.col-lg-4'),
+      reportTotalItems?.closest('.col-lg-4'),
+      reportTopProductsBody?.closest('.col-lg-6'),
+      reportCustomerSalesBody?.closest('.col-lg-6'),
+      reportInvoicePaymentsBody?.closest('.panel-card')
+    ],
+    expense_report: [
+      reportTotalExpenses?.closest('.col-lg-4'),
+      reportExpenseByCategoryBody?.closest('.col-lg-6'),
+      reportExpenseByVendorBody?.closest('.col-lg-6')
+    ],
+    cashflow_report: [
+      reportNetCashflow?.closest('.col-lg-4'),
+      reportTotalExtraIncome?.closest('.col-lg-4')
+    ],
+    product_performance: [reportTopProductsBody?.closest('.col-lg-6')],
+    inventory_report: [reportTopProductsBody?.closest('.col-lg-6')],
+    profit_report: [reportCombinedNetProfit?.closest('.col-lg-3')],
+    booking_report: [],
+    occupancy_report: [],
+    revenue_report: [reportTotalEarnedRevenue?.closest('.col-lg-3'), reportTotalCashReceived?.closest('.col-lg-3'), reportTotalOutstandingRevenue?.closest('.col-lg-3'), reportRevenueByCustomerBody?.closest('.panel-card')],
+    drug_inventory_report: [reportTopProductsBody?.closest('.col-lg-6')],
+    expiry_report: [reportRevenueByCustomerBody?.closest('.panel-card')],
+    patient_activity_report: []
+  };
+}
+
+function applyReportVisibility() {
+  if (!reportsSection) return;
+  const allowed = new Set(getAllowedReports());
+  const groups = getReportGroups();
+  Object.entries(groups).forEach(([key, nodes]) => {
+    const visible = allowed.has(key);
+    (nodes || []).forEach((node) => {
+      if (node) node.style.display = visible ? '' : 'none';
+    });
+  });
+  let notice = document.getElementById('industryReportNotice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'industryReportNotice';
+    notice.className = 'alert alert-info mt-2';
+    reportsSection.prepend(notice);
+  }
+  const role = getCurrentUserRole();
+  notice.textContent = `Industry: ${getCurrentIndustry()} | Role: ${role} | Enabled reports: ${Array.from(allowed).join(', ')}`;
 }
 
 function renderClockInGallery(events = []) {
@@ -1843,6 +2033,7 @@ function stopCamera() {
 async function refreshSession() {
   state.session = await api.getSession();
   state.companies = state.session?.companies || [];
+  state.currentUserRole = normalizeUserRole(state.session?.user?.userRole || (state.session?.user?.isAdmin ? 'admin' : 'manager'));
   const activeCompany = state.companies.find((c) => Number(c.id) === Number(state.session?.activeCompanyId));
   state.currentIndustry = normalizeIndustry(activeCompany?.industryType || state.currentIndustry || 'general');
   if (state.session?.authenticated && typeof api.getIndustryModuleConfig === 'function') {
@@ -1870,9 +2061,11 @@ async function refreshData() {
   }
   state.moduleConfig = moduleConfig || state.moduleConfig;
   state.systemConfig = systemConfig || state.systemConfig;
+  state.currentIndustry = normalizeIndustry(systemConfig?.industryType || moduleConfig?.industry || state.currentIndustry);
 
-  const hospitalityEnabled = Boolean(state.moduleConfig?.enabledFeatures?.hospitality);
-  const medicalEnabled = Boolean(state.moduleConfig?.enabledFeatures?.medical);
+  const allowedWidgets = new Set(getAllowedDashboardWidgets());
+  const hospitalityEnabled = Boolean(state.moduleConfig?.enabledFeatures?.hospitality) || ['active_bookings', 'room_occupancy', 'today_checkins', 'today_checkouts'].some((x) => allowedWidgets.has(x));
+  const medicalEnabled = Boolean(state.moduleConfig?.enabledFeatures?.medical) || ['patients_today', 'low_drug_stock', 'expiring_drugs', 'recent_prescriptions'].some((x) => allowedWidgets.has(x));
 
   const [categories, suppliers, customers, products, vendors, expenseCategories, incomeCategories, expenses, incomes, wallet, transactions, stats, company, invoices, clockIns, dashboardSalesReport, rooms, guests, bookings, patients, drugExpiry, insights] = await Promise.all([
     can('categories', 'view') ? api.getCategories() : Promise.resolve([]),
@@ -1916,7 +2109,7 @@ async function refreshData() {
   state.users = can('users', 'view') ? await api.getUsers() : [];
   if (!state.invoiceDraft.invoiceNumber) await refreshInvoiceNumber();
   if (state.invoiceDraft.useDefaultTax) invoiceTaxPercent.value = String(Number(state.invoiceSettings.defaultTaxRate || 0));
-  renderLookups(); renderPosLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderVendors(); renderExpenses(); renderIncome(); renderCashflow(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); renderClockInGallery(state.clockIns); renderCompany(); renderSystemConfiguration(); renderRooms(); renderGuests(); renderBookings(); renderPatients(); renderDrugExpiry(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); renderSectionAccess(); applyFormAccess();
+  renderLookups(); renderPosLookups(); renderProducts(); renderCategories(); renderSuppliers(); renderCustomers(); renderVendors(); renderExpenses(); renderIncome(); renderCashflow(); renderInvoices(); renderUsers(); renderRoles(); renderDashboard(stats, state.dashboardSalesReport); applyDashboardWidgetVisibility(); renderClockInGallery(state.clockIns); renderCompany(); renderSystemConfiguration(); renderRooms(); renderGuests(); renderBookings(); renderPatients(); renderDrugExpiry(); renderInvoiceSettings(); renderInvoiceItems(); renderInvoicePreview(); applyReportVisibility(); if (invoicePaymentHistoryBody && !invoicePaymentHistoryBody.children.length) renderInvoicePaymentHistory([], 0); initPopupFormLaunchers(); renderSectionAccess(); applyFormAccess();
 }
 
 async function safeRefresh() {
@@ -1964,7 +2157,7 @@ function resetSimpleForms() {
   customerForm.reset(); customerIdField.value = '';
   expenseForm?.reset();
   incomeForm?.reset();
-  userForm.reset(); userIdField.value = ''; userRoleId.value = ''; userIsActive.value = '1';
+  userForm.reset(); userIdField.value = ''; if (userBusinessRole) userBusinessRole.value = 'staff'; userRoleId.value = ''; userIsActive.value = '1';
   roleForm.reset(); roleIdField.value = ''; roleCancelBtn.hidden = true; renderRolePermissionGrid();
 }
 
@@ -2720,6 +2913,7 @@ userForm.addEventListener('submit', async (e) => {
       username: userUsername.value.trim(),
       password: userPassword.value,
       isAdmin: userIsAdmin.value === '1',
+      userRole: userBusinessRole?.value || (userIsAdmin.value === '1' ? 'admin' : 'staff'),
       roleId: userRoleId.value ? Number(userRoleId.value) : null,
       isActive: userIsActive.value === '1',
       assignedCompanies: assigned
@@ -2734,7 +2928,7 @@ usersTableBody.addEventListener('click', async (e) => {
   const t = e.target; if (!(t instanceof HTMLButtonElement)) return; const row = state.users.find((u) => u.id === Number(t.dataset.id)); if (!row) return;
   try {
     if (t.dataset.action === 'edit-user') {
-      userIdField.value = String(row.id); userUsername.value = row.username; userPassword.value = ''; userIsAdmin.value = row.isAdmin ? '1' : '0'; userRoleId.value = row.roleId ? String(row.roleId) : ''; userIsActive.value = row.isActive ? '1' : '0'; setImgOrPlaceholder(userProfilePreview, row.profileImagePath, row.username);
+      userIdField.value = String(row.id); userUsername.value = row.username; userPassword.value = ''; userIsAdmin.value = row.isAdmin ? '1' : '0'; if (userBusinessRole) userBusinessRole.value = row.userRole || (row.isAdmin ? 'admin' : 'staff'); userRoleId.value = row.roleId ? String(row.roleId) : ''; userIsActive.value = row.isActive ? '1' : '0'; setImgOrPlaceholder(userProfilePreview, row.profileImagePath, row.username);
       Array.from(userAssignedCompanies.options).forEach((o) => (o.selected = row.assignedCompanies.includes(Number(o.value))));
       openFormPopup(formCardOf(userForm), 'User Form');
     } else if (t.dataset.action === 'reset-password') {
@@ -2832,7 +3026,7 @@ systemConfigForm?.addEventListener('submit', async (e) => {
     showStatus('System configuration saved.');
   } catch (err) { showStatus(err.message || 'Unable to save system configuration.', 'error'); }
 });
-createUserForm.addEventListener('submit', async (e) => { e.preventDefault(); try { await api.createUser({ username: newUsername.value.trim(), password: newPassword.value, isAdmin: false, assignedCompanies: [Number(companySwitcher.value)] }); createUserForm.reset(); await safeRefresh(); showStatus('Quick user created.'); } catch (err) { showStatus(err.message || 'Quick user create failed.', 'error'); } });
+createUserForm.addEventListener('submit', async (e) => { e.preventDefault(); try { await api.createUser({ username: newUsername.value.trim(), password: newPassword.value, isAdmin: false, userRole: 'staff', assignedCompanies: [Number(companySwitcher.value)] }); createUserForm.reset(); await safeRefresh(); showStatus('Quick user created.'); } catch (err) { showStatus(err.message || 'Quick user create failed.', 'error'); } });
 
 changeNewPassword.addEventListener('input', () => { const v = changeNewPassword.value; let s = 0; if (v.length >= 8) s++; if (/[A-Z]/.test(v)) s++; if (/[a-z]/.test(v)) s++; if (/\d/.test(v)) s++; if (/[^A-Za-z0-9]/.test(v)) s++; if (!v) { passwordStrength.textContent = 'Strength: enter password'; passwordStrength.classList.remove('weak', 'strong'); } else if (s >= 4) { passwordStrength.textContent = 'Strength: strong'; passwordStrength.classList.add('strong'); passwordStrength.classList.remove('weak'); } else { passwordStrength.textContent = 'Strength: weak (use upper/lower/number/symbol, 8+ chars)'; passwordStrength.classList.add('weak'); passwordStrength.classList.remove('strong'); } });
 changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault(); try { if (!state.session?.user?.username) throw new Error('Login required.'); if (changeNewPassword.value !== confirmNewPassword.value) throw new Error('New password and confirmation do not match.'); await api.changePassword({ username: state.session.user.username, currentPassword: currentPassword.value, newPassword: changeNewPassword.value }); changePasswordForm.reset(); passwordStrength.textContent = 'Strength: enter password'; passwordStrength.classList.remove('weak', 'strong'); showStatus('Password changed successfully.'); } catch (err) { showStatus(err.message || 'Password change failed.', 'error'); } });

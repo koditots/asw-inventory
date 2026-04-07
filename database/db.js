@@ -34,6 +34,7 @@ const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'print'];
 const INDUSTRY_TYPES = ['retail', 'hospitality', 'medical', 'general'];
 const DEFAULT_INDUSTRY = 'general';
 const MODULE_TYPES = ['core', 'retail', 'hospitality', 'medical'];
+const USER_ROLES = ['admin', 'manager', 'staff'];
 
 function fullPermissions() {
   const permissions = {};
@@ -65,6 +66,12 @@ function normalizeEnabledModules(value) {
   const normalized = [...new Set(list.map((x) => String(x || '').trim().toLowerCase()).filter((x) => MODULE_TYPES.includes(x)))];
   if (!normalized.includes('core')) normalized.unshift('core');
   return normalized;
+}
+
+function normalizeUserRole(value, fallback = 'admin') {
+  const role = String(value || '').trim().toLowerCase();
+  if (USER_ROLES.includes(role)) return role;
+  return USER_ROLES.includes(String(fallback || '').trim().toLowerCase()) ? String(fallback).trim().toLowerCase() : 'admin';
 }
 
 function ensureDir(dir) {
@@ -219,6 +226,7 @@ async function migrate() {
     password_salt TEXT NOT NULL,
     assigned_companies TEXT NOT NULL DEFAULT '[]',
     is_admin INTEGER NOT NULL DEFAULT 0,
+    user_role TEXT NOT NULL DEFAULT 'admin',
     created_at TEXT NOT NULL
   )`);
 
@@ -527,6 +535,7 @@ async function migrate() {
   await ensureCol('users', 'assigned_companies', "TEXT NOT NULL DEFAULT '[]'");
   await ensureCol('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
   await ensureCol('users', 'role_id', 'INTEGER');
+  await ensureCol('users', 'user_role', "TEXT NOT NULL DEFAULT 'admin'");
   await ensureCol('users', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
   await ensureCol('users', 'profile_image_path', "TEXT NOT NULL DEFAULT ''");
   await ensureCol('settings', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
@@ -751,6 +760,9 @@ async function migrate() {
   await run("UPDATE settings SET updated_at = ? WHERE updated_at IS NULL OR TRIM(updated_at) = ''", [new Date().toISOString()]);
   await run("UPDATE settings SET include_revenue_in_balance = 0 WHERE include_revenue_in_balance IS NULL");
   await run('UPDATE users SET is_active = 1 WHERE is_active IS NULL');
+  await run("UPDATE users SET user_role = 'admin' WHERE user_role IS NULL OR TRIM(user_role) = ''");
+  await run("UPDATE users SET user_role = LOWER(TRIM(user_role))");
+  await run("UPDATE users SET user_role = 'admin' WHERE user_role NOT IN ('admin', 'manager', 'staff')");
   await run("UPDATE users SET profile_image_path = '' WHERE profile_image_path IS NULL");
   await run("UPDATE roles SET permissions = '{}' WHERE permissions IS NULL OR TRIM(permissions) = ''");
   await run("UPDATE roles SET created_at = ? WHERE created_at IS NULL OR TRIM(created_at) = ''", [new Date().toISOString()]);
@@ -2730,6 +2742,7 @@ function normalizeUser(row) {
     id: row.id,
     username: row.username,
     isAdmin: Boolean(row.is_admin),
+    userRole: normalizeUserRole(row.user_role, Boolean(row.is_admin) ? 'admin' : 'staff'),
     assignedCompanies: parseJsonArray(row.assigned_companies),
     roleId: toInt(row.role_id, null),
     roleName: row.role_name || null,
@@ -2765,6 +2778,7 @@ async function createUser(payload) {
   const password = String(payload.password || '');
   const assignedCompanies = cleanAssigned(payload.assignedCompanies || []);
   const isAdmin = payload.isAdmin ? 1 : 0;
+  const userRole = normalizeUserRole(payload.userRole, isAdmin ? 'admin' : 'staff');
   const roleId = toInt(payload.roleId, null);
   const isActive = payload.isActive === undefined ? 1 : (payload.isActive ? 1 : 0);
   const profileImagePath = String(payload.profileImagePath || '').trim();
@@ -2778,9 +2792,9 @@ async function createUser(payload) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
   const res = await run(
-    `INSERT INTO users (username, password_hash, password_salt, assigned_companies, is_admin, role_id, is_active, profile_image_path, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [username, hash, salt, JSON.stringify(assignedCompanies), isAdmin, roleId, isActive, profileImagePath, new Date().toISOString()]
+    `INSERT INTO users (username, password_hash, password_salt, assigned_companies, is_admin, user_role, role_id, is_active, profile_image_path, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [username, hash, salt, JSON.stringify(assignedCompanies), isAdmin, userRole, roleId, isActive, profileImagePath, new Date().toISOString()]
   );
   const row = await get(
     `SELECT u.*, r.role_name, r.permissions AS role_permissions
@@ -2797,6 +2811,7 @@ async function updateUser(payload) {
   const username = String(payload.username || '').trim();
   const assignedCompanies = cleanAssigned(payload.assignedCompanies || []);
   const isAdmin = payload.isAdmin ? 1 : 0;
+  const userRole = normalizeUserRole(payload.userRole, isAdmin ? 'admin' : 'staff');
   const roleId = toInt(payload.roleId, null);
   const isActive = payload.isActive === undefined ? 1 : (payload.isActive ? 1 : 0);
   const profileImagePath = payload.profileImagePath === undefined ? undefined : String(payload.profileImagePath || '').trim();
@@ -2818,13 +2833,13 @@ async function updateUser(payload) {
   }
   if (profileImagePath === undefined) {
     await run(
-      'UPDATE users SET username = ?, assigned_companies = ?, is_admin = ?, role_id = ?, is_active = ? WHERE id = ?',
-      [username, JSON.stringify(assignedCompanies), isAdmin, roleId, isActive, id]
+      'UPDATE users SET username = ?, assigned_companies = ?, is_admin = ?, user_role = ?, role_id = ?, is_active = ? WHERE id = ?',
+      [username, JSON.stringify(assignedCompanies), isAdmin, userRole, roleId, isActive, id]
     );
   } else {
     await run(
-      'UPDATE users SET username = ?, assigned_companies = ?, is_admin = ?, role_id = ?, is_active = ?, profile_image_path = ? WHERE id = ?',
-      [username, JSON.stringify(assignedCompanies), isAdmin, roleId, isActive, profileImagePath, id]
+      'UPDATE users SET username = ?, assigned_companies = ?, is_admin = ?, user_role = ?, role_id = ?, is_active = ?, profile_image_path = ? WHERE id = ?',
+      [username, JSON.stringify(assignedCompanies), isAdmin, userRole, roleId, isActive, profileImagePath, id]
     );
   }
   if (payload.password) {
@@ -2885,7 +2900,7 @@ async function getUserAccessProfile(userId) {
   const id = toInt(userId, -1);
   if (id <= 0) throw new Error('A valid user ID is required.');
   const row = await get(
-    `SELECT u.id, u.username, u.assigned_companies AS assignedCompanies, u.is_admin AS isAdmin, u.role_id AS roleId, u.is_active AS isActive, u.profile_image_path AS profileImagePath,
+    `SELECT u.id, u.username, u.assigned_companies AS assignedCompanies, u.is_admin AS isAdmin, u.user_role AS userRole, u.role_id AS roleId, u.is_active AS isActive, u.profile_image_path AS profileImagePath,
             r.role_name AS roleName, r.permissions AS rolePermissions
      FROM users u
      LEFT JOIN roles r ON r.id = u.role_id
@@ -2897,6 +2912,7 @@ async function getUserAccessProfile(userId) {
     id: row.id,
     username: row.username,
     isAdmin: Boolean(row.isAdmin) || String(row.username || '').toLowerCase() === 'admin',
+    userRole: normalizeUserRole(row.userRole, Boolean(row.isAdmin) ? 'admin' : 'staff'),
     assignedCompanies: cleanAssigned(parseJsonArray(row.assignedCompanies)),
     roleId: toInt(row.roleId, null),
     roleName: row.roleName || null,
@@ -2913,7 +2929,7 @@ async function authenticateUser(payload) {
   if (!username || !password) throw new Error('Username and password are required.');
   const user = await get(
     `SELECT id, username, password_hash AS passwordHash, password_salt AS passwordSalt,
-            assigned_companies AS assignedCompanies, is_admin AS isAdmin, role_id AS roleId, is_active AS isActive, profile_image_path AS profileImagePath
+            assigned_companies AS assignedCompanies, is_admin AS isAdmin, user_role AS userRole, role_id AS roleId, is_active AS isActive, profile_image_path AS profileImagePath
      FROM users
      WHERE username = ?`,
     [username]
