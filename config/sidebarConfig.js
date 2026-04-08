@@ -1,43 +1,30 @@
 const sidebarConfig = {
-  general: [
-    "dashboard",
-    "inventory",
-    "invoices",
-    "customers",
-    "expenses",
-    "reports",
-    "settings"
-  ],
   retail: [
-    "dashboard",
-    "inventory",
-    "pos",
-    "sales",
-    "customers",
-    "expenses",
-    "reports",
-    "settings"
+    { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' },
+    { key: 'inventory', name: 'Products', route: '/products', icon: 'box' },
+    { key: 'sales', name: 'Sales', route: '/sales', icon: 'cart' },
+    { key: 'customers', name: 'Customers', route: '/customers', icon: 'users' },
+    { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart' }
   ],
   hospitality: [
-    "dashboard",
-    "rooms",
-    "bookings",
-    "guests",
-    "kitchen_inventory",
-    "billing",
-    "expenses",
-    "reports",
-    "settings"
+    { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' },
+    { key: 'rooms', name: 'Rooms', route: '/rooms', icon: 'bed' },
+    { key: 'bookings', name: 'Bookings', route: '/bookings', icon: 'calendar' },
+    { key: 'guests', name: 'Guests', route: '/guests', icon: 'user' },
+    { key: 'kitchen_inventory', name: 'Kitchen', route: '/kitchen', icon: 'food' },
+    { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart' }
   ],
   medical: [
-    "dashboard",
-    "drug_inventory",
-    "patients",
-    "prescriptions",
-    "expiry_tracking",
-    "expenses",
-    "reports",
-    "settings"
+    { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' },
+    { key: 'drug_inventory', name: 'Drugs', route: '/drugs', icon: 'pill' },
+    { key: 'patients', name: 'Patients', route: '/patients', icon: 'heart' },
+    { key: 'prescriptions', name: 'Prescriptions', route: '/prescriptions', icon: 'file' },
+    { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart' }
+  ],
+  general: [
+    { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' },
+    { key: 'transactions', name: 'Transactions', route: '/transactions', icon: 'money' },
+    { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart' }
   ]
 };
 

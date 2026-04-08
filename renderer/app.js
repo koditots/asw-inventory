@@ -224,8 +224,7 @@ const state = {
 };
 
 const sectionTitle = $('sectionTitle');
-const sectionButtons = Array.from(document.querySelectorAll('.section-nav .nav-link'));
-const defaultSidebarLabels = new Map(sectionButtons.map((btn) => [btn.dataset.section, btn.querySelector('span:last-child')?.textContent || btn.dataset.section]));
+const sidebarNav = $('sidebarNav');
 const sections = Array.from(document.querySelectorAll('.app-section'));
 const proMenu = $('proMenu');
 const statusMessageEl = $('statusMessage');
@@ -410,6 +409,7 @@ const dashboardSection = $('section-dashboard');
 const companyCreateForm = $('companyCreateForm');
 const newCompanyName = $('newCompanyName');
 const newCompanyIndustryType = $('newCompanyIndustryType');
+const newCompanyInitialBalance = $('newCompanyInitialBalance');
 const newCompanyIndustryConfirm = $('newCompanyIndustryConfirm');
 const companyForm = $('companyForm');
 const companyName = $('companyName');
@@ -523,25 +523,36 @@ const navSvgs = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2H9a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9h.2a1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1V9c0 .4.2.7.6.9H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6z"/></svg>'
 };
 
-const menuRegistry = {
-  dashboard: { label: 'Dashboard', icon: 'home.svg', route: '/dashboard' },
-  inventory: { label: 'Inventory', icon: 'box.svg', route: '/inventory' },
-  pos: { label: 'POS', icon: 'cart.svg', route: '/pos' },
-  sales: { label: 'Sales', icon: 'chart.svg', route: '/sales' },
-  customers: { label: 'Customers', icon: 'users.svg', route: '/customers' },
-  rooms: { label: 'Rooms', icon: 'bed.svg', route: '/rooms' },
-  bookings: { label: 'Bookings', icon: 'calendar.svg', route: '/bookings' },
-  guests: { label: 'Guests', icon: 'user.svg', route: '/guests' },
-  kitchen_inventory: { label: 'Kitchen', icon: 'food.svg', route: '/kitchen' },
-  billing: { label: 'Billing', icon: 'invoice.svg', route: '/billing' },
-  drug_inventory: { label: 'Drugs', icon: 'pill.svg', route: '/drugs' },
-  patients: { label: 'Patients', icon: 'heart.svg', route: '/patients' },
-  prescriptions: { label: 'Prescriptions', icon: 'file.svg', route: '/prescriptions' },
-  expiry_tracking: { label: 'Expiry', icon: 'alert.svg', route: '/expiry' },
-  expenses: { label: 'Expenses', icon: 'money.svg', route: '/expenses' },
-  reports: { label: 'Reports', icon: 'report.svg', route: '/reports' },
-  settings: { label: 'Settings', icon: 'settings.svg', route: '/settings' },
-  invoices: { label: 'Invoices', icon: 'invoice.svg', route: '/invoices' }
+const adminExtras = [
+  { key: 'users', name: 'Users', route: '/users', icon: 'users' },
+  { key: 'settings', name: 'Company Settings', route: '/company-settings', icon: 'settings' },
+  { key: 'create_company', name: 'Create Company', route: '/create-company', icon: 'company' }
+];
+
+const routeToSection = {
+  '/dashboard': 'dashboard',
+  '/products': 'products',
+  '/inventory': 'products',
+  '/sales': 'products',
+  '/pos': 'pos',
+  '/customers': 'customers',
+  '/rooms': 'rooms',
+  '/bookings': 'bookings',
+  '/guests': 'guests',
+  '/kitchen': 'products',
+  '/billing': 'invoices',
+  '/drugs': 'products',
+  '/patients': 'patients',
+  '/prescriptions': 'patients',
+  '/expiry': 'drugexpiry',
+  '/transactions': 'cashflow',
+  '/reports': 'reports',
+  '/expenses': 'expenses',
+  '/users': 'users',
+  '/company-settings': 'company',
+  '/create-company': 'company',
+  '/settings': 'settings',
+  '/invoices': 'invoices'
 };
 
 const sectionToMenuKey = {
@@ -551,15 +562,15 @@ const sectionToMenuKey = {
   suppliers: 'inventory',
   customers: 'customers',
   pos: 'pos',
-  invoices: 'invoices',
+  invoices: 'billing',
   expenses: 'expenses',
   vendors: 'expenses',
-  income: 'reports',
-  cashflow: 'reports',
+  income: 'transactions',
+  cashflow: 'transactions',
   clockin: 'dashboard',
   reports: 'reports',
   company: 'settings',
-  users: 'settings',
+  users: 'users',
   roles: 'settings',
   settings: 'settings',
   rooms: 'rooms',
@@ -567,27 +578,6 @@ const sectionToMenuKey = {
   guests: 'guests',
   patients: 'patients',
   drugexpiry: 'expiry_tracking'
-};
-
-const menuKeyToSection = {
-  dashboard: 'dashboard',
-  inventory: 'products',
-  pos: 'pos',
-  sales: 'products',
-  customers: 'customers',
-  rooms: 'rooms',
-  bookings: 'bookings',
-  guests: 'guests',
-  kitchen_inventory: 'products',
-  billing: 'invoices',
-  drug_inventory: 'products',
-  patients: 'patients',
-  prescriptions: 'patients',
-  expiry_tracking: 'drugexpiry',
-  expenses: 'expenses',
-  reports: 'reports',
-  settings: 'settings',
-  invoices: 'invoices'
 };
 
 const sectionPermissionModule = {
@@ -845,23 +835,98 @@ function getCurrentIndustry() {
   return normalizeIndustry(state.company?.industryType || state.systemConfig?.industryType || state.moduleConfig?.industry || 'general');
 }
 
-function getAllowedMenuKeys() {
+function getSectionButtons() {
+  return Array.from(sidebarNav?.querySelectorAll('.nav-link') || []);
+}
+
+function normalizeMenuItem(rawItem) {
+  if (!rawItem) return null;
+  if (typeof rawItem === 'string') {
+    const legacyRoute = rawItem === 'inventory' ? '/products' : `/${rawItem}`;
+    return { key: rawItem, name: rawItem.replace(/_/g, ' '), route: legacyRoute, icon: rawItem };
+  }
+  const route = String(rawItem.route || '').trim().toLowerCase();
+  if (!route) return null;
+  return {
+    key: String(rawItem.key || rawItem.name || route).trim().toLowerCase().replace(/\s+/g, '_'),
+    name: String(rawItem.name || 'Menu').trim(),
+    route,
+    icon: String(rawItem.icon || 'dashboard').trim().toLowerCase()
+  };
+}
+
+function removeDuplicatesByName(menuItems = []) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of menuItems) {
+    const nameKey = String(item?.name || '').trim().toLowerCase();
+    if (!nameKey || seen.has(nameKey)) continue;
+    seen.add(nameKey);
+    unique.push(item);
+  }
+  return unique;
+}
+
+function mapMenuKeyForRole(item) {
+  const key = String(item?.key || '').trim().toLowerCase();
+  if (!key) return '';
+  if (key === 'create_company') return 'settings';
+  if (key === 'billing') return 'invoices';
+  if (key === 'transactions') return 'cashflow';
+  return key;
+}
+
+function getPermissionModuleForMenuItem(item) {
+  const key = mapMenuKeyForRole(item);
+  const lookup = {
+    dashboard: 'dashboard',
+    inventory: 'products',
+    sales: 'sales',
+    pos: 'sales',
+    customers: 'customers',
+    rooms: 'company',
+    bookings: 'company',
+    guests: 'customers',
+    kitchen_inventory: 'products',
+    billing: 'invoices',
+    invoices: 'invoices',
+    drug_inventory: 'products',
+    patients: 'customers',
+    prescriptions: 'customers',
+    expiry_tracking: 'products',
+    transactions: 'cashflow',
+    expenses: 'expenses',
+    reports: 'reports',
+    users: 'users',
+    settings: 'company'
+  };
+  return lookup[key] || 'dashboard';
+}
+
+function getAllowedMenuItems() {
   const cfg = sidebarConfig || {};
   const industry = getCurrentIndustry();
   const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
-  const fallback = Array.isArray(cfg.general) ? cfg.general : ['dashboard', 'settings'];
-  const industryMenus = selected.length ? selected : fallback;
+  const fallback = Array.isArray(cfg.general) ? cfg.general : [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' }];
+  const baseMenus = (selected.length ? selected : fallback).map(normalizeMenuItem).filter(Boolean);
   const role = getCurrentUserRole();
   const roleRules = rolePermissions || {};
   const roleAllowed = Array.isArray(roleRules[role]) ? roleRules[role] : ['*'];
-  const list = industryMenus.filter((menu) => roleAllowed.includes('*') || roleAllowed.includes(menu));
-  if (!list.length) return ['dashboard'];
-  return list;
+  const roleFiltered = baseMenus.filter((item) => roleAllowed.includes('*') || roleAllowed.includes(mapMenuKeyForRole(item)));
+  const withExtras = role === 'admin'
+    ? roleFiltered.concat(adminExtras.map(normalizeMenuItem).filter(Boolean))
+    : roleFiltered;
+  const deduped = removeDuplicatesByName(withExtras);
+  if (deduped.length) return deduped;
+  return [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' }];
+}
+
+function getAllowedMenuKeys() {
+  return getAllowedMenuItems().map((item) => item.key);
 }
 
 function getAllowedSections() {
-  const keys = getAllowedMenuKeys();
-  const sections = keys.map((key) => menuKeyToSection[key]).filter(Boolean);
+  const sections = getAllowedMenuItems().map((item) => routeToSection[item.route]).filter(Boolean);
   if (!sections.length) return new Set(['dashboard']);
   return new Set(sections);
 }
@@ -896,15 +961,22 @@ function getAllowedReports() {
   return reports.length ? reports : ['sales_report'];
 }
 
+function routeForSection(sectionName) {
+  const match = getAllowedMenuItems().find((item) => routeToSection[item.route] === sectionName);
+  if (match?.route) return match.route;
+  if (sectionName === 'company') return '/company-settings';
+  if (sectionName === 'users') return '/users';
+  if (sectionName === 'reports') return '/reports';
+  return '/dashboard';
+}
+
 function sectionRoute(sectionName) {
-  const key = sectionToMenuKey[sectionName];
-  return menuRegistry[key]?.route || '/dashboard';
+  return routeForSection(sectionName);
 }
 
 function sectionFromRoute(routePath) {
   const route = String(routePath || '').trim().toLowerCase();
-  const key = Object.keys(menuRegistry).find((k) => String(menuRegistry[k]?.route || '').toLowerCase() === route);
-  return key ? menuKeyToSection[key] : null;
+  return routeToSection[route] || null;
 }
 
 function getIconSvg(iconFile) {
@@ -932,10 +1004,27 @@ function getIconSvg(iconFile) {
 
 function applyNavIcons() {
   document.querySelectorAll('.nav-icon[data-icon]').forEach((el) => {
-    const section = el.closest('.nav-link')?.dataset.section || '';
-    const menuKey = sectionToMenuKey[section] || 'dashboard';
-    const fileIcon = getIconSvg(menuRegistry[menuKey]?.icon);
-    const icon = fileIcon || navSvgs[el.dataset.icon] || navSvgs.dashboard;
+    const iconName = String(el.dataset.icon || '').trim().toLowerCase();
+    const fileIcon = getIconSvg(iconName.endsWith('.svg') ? iconName : `${iconName}.svg`);
+    const iconFallbackMap = {
+      home: 'dashboard',
+      box: 'products',
+      cart: 'sales',
+      users: 'users',
+      chart: 'reports',
+      bed: 'company',
+      calendar: 'company',
+      user: 'customers',
+      food: 'products',
+      pill: 'products',
+      file: 'invoices',
+      alert: 'reports',
+      money: 'expenses',
+      settings: 'settings',
+      company: 'company'
+    };
+    const navKey = iconFallbackMap[iconName] || iconName;
+    const icon = fileIcon || navSvgs[navKey] || navSvgs.dashboard;
     el.innerHTML = icon;
   });
 }
@@ -1047,6 +1136,7 @@ async function handleMenuAction(action) {
 function setActiveSection(name) {
   const allowed = isSectionAllowed(name);
   const requested = allowed ? name : 'dashboard';
+  const sectionButtons = getSectionButtons();
   const target = sectionButtons.find((b) => b.dataset.section === requested && b.style.display !== 'none');
   const safeName = target ? requested : (sectionButtons.find((b) => b.style.display !== 'none')?.dataset.section || 'dashboard');
   for (const b of sectionButtons) b.classList.toggle('active', b.dataset.section === safeName);
@@ -1060,29 +1150,35 @@ function setActiveSection(name) {
   }
 }
 
-function applySidebarLabels() {
+function buildSidebarMenu() {
   const labelMap = state.moduleConfig?.labelMap || {};
-  sectionButtons.forEach((btn) => {
-    const section = btn.dataset.section;
-    const menuKey = sectionToMenuKey[section] || section;
-    const textEl = btn.querySelector('span:last-child');
-    if (!textEl) return;
-    textEl.textContent = labelMap[section] || menuRegistry[menuKey]?.label || defaultSidebarLabels.get(section) || section;
-  });
+  return getAllowedMenuItems().map((item) => ({
+    ...item,
+    name: labelMap[item.key] || labelMap[item.name] || item.name,
+    section: routeToSection[item.route] || 'dashboard'
+  }));
 }
 
 function renderSectionAccess() {
-  const allowedMenus = new Set(getAllowedMenuKeys());
-  sectionButtons.forEach((btn) => {
-    const section = btn.dataset.section;
-    const menuKey = sectionToMenuKey[section] || section;
-    const moduleName = sectionPermissionModule[section] || 'dashboard';
-    const permissionVisible = can(moduleName, 'view');
-    const moduleVisible = allowedMenus.has(menuKey);
-    btn.style.display = permissionVisible && moduleVisible ? '' : 'none';
+  const menuItems = buildSidebarMenu().filter((item) => {
+    const moduleName = getPermissionModuleForMenuItem(item);
+    return can(moduleName, 'view');
   });
+  if (sidebarNav) {
+    sidebarNav.innerHTML = '';
+    const safeItems = menuItems.length ? menuItems : [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', section: 'dashboard' }];
+    safeItems.forEach((item) => {
+      sidebarNav.insertAdjacentHTML(
+        'beforeend',
+        `<button class="nav-link" data-section="${item.section}" data-menu-key="${item.key}" data-route="${item.route}">
+          <span class="nav-icon" data-icon="${item.icon}"></span>
+          <span>${item.name}</span>
+        </button>`
+      );
+    });
+  }
   applyNavIcons();
-  applySidebarLabels();
+  const sectionButtons = getSectionButtons();
   const activeVisible = sectionButtons.find((btn) => btn.classList.contains('active') && btn.style.display !== 'none');
   if (activeVisible) setActiveSection(activeVisible.dataset.section);
   else {
@@ -2229,7 +2325,11 @@ function applyRouteFromHash() {
   setActiveSection(mappedSection);
 }
 
-sectionButtons.forEach((b) => b.addEventListener('click', () => setActiveSection(b.dataset.section)));
+sidebarNav?.addEventListener('click', (e) => {
+  const button = e.target.closest('.nav-link[data-section]');
+  if (!button) return;
+  setActiveSection(button.dataset.section);
+});
 window.addEventListener('hashchange', () => {
   applyRouteFromHash();
 });
@@ -2815,13 +2915,20 @@ companyCreateForm.addEventListener('submit', async (e) => {
   try {
     const name = newCompanyName.value.trim();
     const industryType = String(newCompanyIndustryType?.value || '').trim();
+    const initialBalanceValue = String(newCompanyInitialBalance?.value || '').trim();
+    const initialBalance = initialBalanceValue ? Number(initialBalanceValue) : 0;
     const industryConfirmed = Boolean(newCompanyIndustryConfirm?.checked);
     if (!name) throw new Error('Company name is required.');
     if (!industryType) throw new Error('Industry selection is required.');
+    if (!Number.isFinite(initialBalance) || initialBalance < 0) throw new Error('Initial balance must be zero or greater.');
     if (!industryConfirmed) throw new Error('Please confirm that industry cannot be changed after setup.');
-    await api.createCompany({ name, industryType, industryConfirmed });
+    const created = await api.createCompany({ name, industryType, initialBalance, industryConfirmed });
+    if (created?.id) {
+      await api.switchCompany(Number(created.id));
+    }
     newCompanyName.value = '';
     if (newCompanyIndustryType) newCompanyIndustryType.value = '';
+    if (newCompanyInitialBalance) newCompanyInitialBalance.value = '';
     if (newCompanyIndustryConfirm) newCompanyIndustryConfirm.checked = false;
     await safeRefresh();
     showStatus('Company created.');

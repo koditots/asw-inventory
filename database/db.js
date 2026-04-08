@@ -884,6 +884,9 @@ function normalizePaymentMethods(value) {
 
 async function createCompany(payload) {
   const input = mapCompanyInput(payload || {}, {}, { requireIndustrySelection: true });
+  const initialBalance = Number(payload?.initialBalance ?? 0);
+  if (!Number.isFinite(initialBalance) || initialBalance < 0) throw new Error('Initial balance must be zero or greater.');
+  const openingBalance = Number(initialBalance.toFixed(2));
   const industryConfirmed = Boolean(payload?.industryConfirmed);
   if (!industryConfirmed) throw new Error('Please confirm the selected industry before creating company.');
   const result = await run(
@@ -920,6 +923,19 @@ async function createCompany(payload) {
      VALUES (?, 0, ?)`,
     [result.id, stamp]
   );
+  if (openingBalance > 0) {
+    await run(
+      `UPDATE company_wallet
+       SET current_balance = ?, last_updated_at = ?
+       WHERE company_id = ?`,
+      [openingBalance, stamp, result.id]
+    );
+    await run(
+      `INSERT INTO transactions (company_id, type, reference_id, amount, direction, balance_after, created_at, created_by)
+       VALUES (?, 'opening', ?, ?, 'in', ?, ?, NULL)`,
+      [result.id, null, openingBalance, openingBalance, stamp]
+    );
+  }
   await run(
     `INSERT OR IGNORE INTO expense_categories (company_id, name, created_by, created_at)
      VALUES (?, ?, NULL, ?)`,
