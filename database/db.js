@@ -231,6 +231,15 @@ async function migrate() {
     user_role TEXT NOT NULL DEFAULT 'admin',
     created_at TEXT NOT NULL
   )`);
+  await run(`CREATE TABLE IF NOT EXISTS user_companies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    company_id INTEGER NOT NULL,
+    role TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
+    UNIQUE(user_id, company_id)
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_user_companies_user ON user_companies(user_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_user_companies_company ON user_companies(company_id)');
 
   await run(`CREATE TABLE IF NOT EXISTS clock_in (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -786,6 +795,39 @@ async function migrate() {
   await run("UPDATE users SET user_role = LOWER(TRIM(user_role))");
   await run("UPDATE users SET user_role = 'admin' WHERE user_role NOT IN ('admin', 'manager', 'staff')");
   await run("UPDATE users SET profile_image_path = '' WHERE profile_image_path IS NULL");
+  // Migrate legacy user-company assignments into normalized user_companies links.
+  const companyRows = await all('SELECT id FROM company ORDER BY id ASC');
+  const allCompanyIds = companyRows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0);
+  const firstCompanyId = allCompanyIds[0] || 1;
+  const users = await all('SELECT id, is_admin AS isAdmin, assigned_companies AS assignedCompanies FROM users');
+  for (const user of users) {
+    const userId = toInt(user.id, -1);
+    if (userId <= 0) continue;
+    const currentAssignments = cleanAssigned(parseJsonArray(user.assignedCompanies || '[]'));
+    const desired = [];
+    if (Boolean(user.isAdmin)) {
+      const adminCompanies = currentAssignments.length ? currentAssignments : allCompanyIds;
+      for (const companyId of adminCompanies) desired.push({ companyId, role: 'admin' });
+      if (!desired.length) desired.push({ companyId: firstCompanyId, role: 'admin' });
+    } else {
+      const baseAssignments = currentAssignments.length ? currentAssignments : [firstCompanyId];
+      const ownerCompanyId = baseAssignments[0];
+      desired.push({ companyId: ownerCompanyId, role: 'admin' });
+      for (const companyId of baseAssignments.slice(1)) desired.push({ companyId, role: 'staff' });
+    }
+    for (const link of desired) {
+      const cid = toInt(link.companyId, -1);
+      if (cid <= 0) continue;
+      await run(
+        `INSERT INTO user_companies (user_id, company_id, role)
+         VALUES (?, ?, ?)
+         ON CONFLICT(user_id, company_id) DO UPDATE SET role = excluded.role`,
+        [userId, cid, link.role]
+      );
+    }
+    const normalizedAssigned = [...new Set(desired.map((link) => toInt(link.companyId, -1)).filter((id) => id > 0))];
+    await run('UPDATE users SET assigned_companies = ? WHERE id = ?', [JSON.stringify(normalizedAssigned), userId]);
+  }
   await run("UPDATE roles SET permissions = '{}' WHERE permissions IS NULL OR TRIM(permissions) = ''");
   await run("UPDATE roles SET created_at = ? WHERE created_at IS NULL OR TRIM(created_at) = ''", [new Date().toISOString()]);
   await run("UPDATE roles SET updated_at = ? WHERE updated_at IS NULL OR TRIM(updated_at) = ''", [new Date().toISOString()]);
@@ -838,13 +880,51 @@ async function getCompanyById(companyId) {
   return normalizeCompany(await get('SELECT * FROM company WHERE id = ?', [id]));
 }
 
+async function assignUserCompany(userId, companyId, role = 'staff') {
+  const uid = toInt(userId, -1);
+  const cid = toInt(companyId, -1);
+  const normalizedRole = String(role || '').trim().toLowerCase() === 'admin' ? 'admin' : 'staff';
+  if (uid <= 0 || cid <= 0) throw new Error('Valid user and company IDs are required.');
+  await run(
+    `INSERT INTO user_companies (user_id, company_id, role)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id, company_id) DO UPDATE SET role = excluded.role`,
+    [uid, cid, normalizedRole]
+  );
+}
+
+async function removeUserCompany(userId, companyId) {
+  const uid = toInt(userId, -1);
+  const cid = toInt(companyId, -1);
+  if (uid <= 0 || cid <= 0) throw new Error('Valid user and company IDs are required.');
+  await run('DELETE FROM user_companies WHERE user_id = ? AND company_id = ?', [uid, cid]);
+}
+
+async function getUserCompanyLinks(userId) {
+  const uid = toInt(userId, -1);
+  if (uid <= 0) throw new Error('A valid user ID is required.');
+  const rows = await all(
+    `SELECT uc.id AS link_id, uc.user_id, uc.company_id, uc.role, c.*
+     FROM user_companies uc
+     INNER JOIN company c ON c.id = uc.company_id
+     WHERE uc.user_id = ?
+     ORDER BY c.name ASC`,
+    [uid]
+  );
+  return rows.map((row) => ({
+    id: row.link_id,
+    userId: row.user_id,
+    companyId: row.company_id,
+    role: String(row.role || 'staff').toLowerCase() === 'admin' ? 'admin' : 'staff',
+    company: normalizeCompany(row)
+  }));
+}
+
 async function getCompaniesForUser(user) {
-  if (user?.isAdmin) return getAllCompanies();
-  const assigned = cleanAssigned(user?.assignedCompanies || []);
-  if (assigned.length === 0) return [];
-  const placeholders = assigned.map(() => '?').join(', ');
-  const rows = await all(`SELECT * FROM company WHERE id IN (${placeholders}) ORDER BY name ASC`, assigned);
-  return rows.map(normalizeCompany);
+  const uid = toInt(user?.id, -1);
+  if (uid <= 0) return [];
+  const links = await getUserCompanyLinks(uid);
+  return links.map((link) => link.company).filter(Boolean);
 }
 
 function mapCompanyInput(payload, fallback = {}, options = {}) {
@@ -2840,10 +2920,31 @@ function buildEffectivePermissions(user) {
   return fallback;
 }
 
+async function syncUserCompanyLinks(userId, assignedCompanies = [], defaultRole = 'staff') {
+  const uid = toInt(userId, -1);
+  if (uid <= 0) throw new Error('A valid user ID is required.');
+  const companyIds = cleanAssigned(assignedCompanies);
+  const targetRole = String(defaultRole || '').trim().toLowerCase() === 'admin' ? 'admin' : 'staff';
+  const desired = companyIds.map((companyId) => ({ companyId, role: targetRole }));
+  const existing = await all('SELECT company_id AS companyId FROM user_companies WHERE user_id = ?', [uid]);
+  const desiredIds = new Set(desired.map((row) => row.companyId));
+
+  for (const row of desired) {
+    await assignUserCompany(uid, row.companyId, row.role);
+  }
+  for (const row of existing) {
+    const cid = toInt(row.companyId, -1);
+    if (cid > 0 && !desiredIds.has(cid)) {
+      await removeUserCompany(uid, cid);
+    }
+  }
+  return companyIds;
+}
+
 async function createUser(payload) {
   const username = String(payload.username || '').trim();
   const password = String(payload.password || '');
-  const assignedCompanies = cleanAssigned(payload.assignedCompanies || []);
+  let assignedCompanies = cleanAssigned(payload.assignedCompanies || []);
   const isAdmin = payload.isAdmin ? 1 : 0;
   const userRole = normalizeUserRole(payload.userRole, isAdmin ? 'admin' : 'staff');
   const roleId = toInt(payload.roleId, null);
@@ -2851,6 +2952,10 @@ async function createUser(payload) {
   const profileImagePath = String(payload.profileImagePath || '').trim();
   if (!username) throw new Error('Username is required.');
   if (!strongPassword(password)) throw new Error('Password must be strong (8+ chars with upper/lower/number/symbol).');
+  if (isAdmin && assignedCompanies.length === 0) {
+    const companies = await all('SELECT id FROM company ORDER BY id ASC');
+    assignedCompanies = cleanAssigned(companies.map((row) => row.id));
+  }
   if (!isAdmin && assignedCompanies.length === 0) throw new Error('Assign at least one company to non-admin users.');
   if (roleId !== null) {
     const role = await get('SELECT id FROM roles WHERE id = ?', [roleId]);
@@ -2870,19 +2975,24 @@ async function createUser(payload) {
      WHERE u.id = ?`,
     [res.id]
   );
+  await syncUserCompanyLinks(res.id, assignedCompanies, isAdmin ? 'admin' : 'staff');
   return normalizeUser(row);
 }
 
 async function updateUser(payload) {
   const id = toInt(payload.id, -1);
   const username = String(payload.username || '').trim();
-  const assignedCompanies = cleanAssigned(payload.assignedCompanies || []);
+  let assignedCompanies = cleanAssigned(payload.assignedCompanies || []);
   const isAdmin = payload.isAdmin ? 1 : 0;
   const userRole = normalizeUserRole(payload.userRole, isAdmin ? 'admin' : 'staff');
   const roleId = toInt(payload.roleId, null);
   const isActive = payload.isActive === undefined ? 1 : (payload.isActive ? 1 : 0);
   const profileImagePath = payload.profileImagePath === undefined ? undefined : String(payload.profileImagePath || '').trim();
   if (id <= 0 || !username) throw new Error('User update data is invalid.');
+  if (isAdmin && assignedCompanies.length === 0) {
+    const companies = await all('SELECT id FROM company ORDER BY id ASC');
+    assignedCompanies = cleanAssigned(companies.map((row) => row.id));
+  }
   if (!isAdmin && assignedCompanies.length === 0) throw new Error('Assign at least one company to non-admin users.');
   if (roleId !== null) {
     const role = await get('SELECT id FROM roles WHERE id = ?', [roleId]);
@@ -2916,6 +3026,7 @@ async function updateUser(payload) {
     const hash = hashPassword(pw, salt);
     await run('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?', [hash, salt, id]);
   }
+  await syncUserCompanyLinks(id, assignedCompanies, isAdmin ? 'admin' : 'staff');
   const row = await get(
     `SELECT u.*, r.role_name, r.permissions AS role_permissions
      FROM users u
@@ -2987,6 +3098,13 @@ async function getUserAccessProfile(userId) {
     profileImagePath: row.profileImagePath || '',
     rolePermissions: normalizePermissions(parseJsonObject(row.rolePermissions || '{}', {}))
   };
+  const links = await getUserCompanyLinks(user.id);
+  const linkedCompanyIds = links.map((link) => toInt(link.companyId, -1)).filter((id) => id > 0);
+  user.assignedCompanies = linkedCompanyIds.length ? linkedCompanyIds : user.assignedCompanies;
+  user.companyRoles = links.reduce((acc, link) => {
+    acc[String(link.companyId)] = link.role === 'admin' ? 'admin' : 'staff';
+    return acc;
+  }, {});
   user.permissions = buildEffectivePermissions(user);
   return user;
 }
@@ -3006,19 +3124,18 @@ async function authenticateUser(payload) {
   const hash = hashPassword(password, user.passwordSalt);
   if (hash !== user.passwordHash) throw new Error('Invalid username or password.');
   const normalized = await getUserAccessProfile(user.id);
-  if (!normalized.isAdmin) {
-    const companies = await getAllCompanies();
-    if (companies.length === 0) {
-      throw new Error('No company exists yet. Ask an administrator to create one.');
-    }
-    const validIds = new Set(companies.map((c) => c.id));
-    let assigned = normalized.assignedCompanies.filter((id) => validIds.has(id));
-    if (assigned.length === 0) assigned = [companies[0].id];
-    if (assigned.length !== normalized.assignedCompanies.length || assigned.some((id, i) => id !== normalized.assignedCompanies[i])) {
-      await run('UPDATE users SET assigned_companies = ? WHERE id = ?', [JSON.stringify(assigned), normalized.id]);
-    }
-    normalized.assignedCompanies = assigned;
+  const companies = await getAllCompanies();
+  if (companies.length === 0) {
+    throw new Error('No company exists yet. Ask an administrator to create one.');
   }
+  const validIds = new Set(companies.map((c) => c.id));
+  let assigned = cleanAssigned(normalized.assignedCompanies).filter((id) => validIds.has(id));
+  if (assigned.length === 0) assigned = [companies[0].id];
+  if (assigned.length !== normalized.assignedCompanies.length || assigned.some((id, i) => id !== normalized.assignedCompanies[i])) {
+    await run('UPDATE users SET assigned_companies = ? WHERE id = ?', [JSON.stringify(assigned), normalized.id]);
+    await syncUserCompanyLinks(normalized.id, assigned, normalized.isAdmin ? 'admin' : 'staff');
+  }
+  normalized.assignedCompanies = assigned;
   normalized.permissions = buildEffectivePermissions(normalized);
   return normalized;
 }
@@ -3319,6 +3436,9 @@ module.exports = {
   getCompanyEmailConfigRaw,
   getAllCompanies,
   getCompaniesForUser,
+  getUserCompanyLinks,
+  assignUserCompany,
+  removeUserCompany,
   getCompanySettings,
   updateCompanySettings,
   createCompany,

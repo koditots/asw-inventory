@@ -188,6 +188,7 @@ const rolePermissions = (() => {
 const state = {
   session: null,
   companies: [],
+  userCompanies: [],
   roles: [],
   products: [],
   categories: [],
@@ -826,6 +827,8 @@ function normalizeUserRole(value) {
 }
 
 function getCurrentUserRole() {
+  const companyRole = String(state.session?.activeCompanyRole || '').trim().toLowerCase();
+  if (companyRole === 'admin' || companyRole === 'staff') return companyRole;
   return normalizeUserRole(state.currentUserRole || state.session?.user?.userRole || (state.session?.user?.isAdmin ? 'admin' : 'manager'));
 }
 
@@ -1230,7 +1233,15 @@ function applyFormAccess() {
 
 function renderCompanySwitcher() {
   companySwitcher.innerHTML = '';
-  for (const c of state.companies) companySwitcher.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
+  const links = Array.isArray(state.userCompanies) && state.userCompanies.length
+    ? state.userCompanies
+    : (state.companies || []).map((company) => ({ companyId: company.id, role: 'admin', company }));
+  for (const link of links) {
+    const company = link.company || {};
+    const role = String(link.role || '').trim().toLowerCase();
+    const roleLabel = role ? ` (${role})` : '';
+    companySwitcher.insertAdjacentHTML('beforeend', `<option value="${company.id}">${company.name}${roleLabel}</option>`);
+  }
   companySwitcher.value = String(state.session?.activeCompanyId || '');
 }
 
@@ -2152,6 +2163,10 @@ function stopCamera() {
 async function refreshSession() {
   state.session = await api.getSession();
   state.companies = state.session?.companies || [];
+  state.userCompanies = state.session?.userCompanies || [];
+  if (state.session?.activeCompanyId) {
+    window.localStorage.setItem('asw.activeCompanyId', String(state.session.activeCompanyId));
+  }
   state.currentUserRole = normalizeUserRole(state.session?.user?.userRole || (state.session?.user?.isAdmin ? 'admin' : 'manager'));
   const activeCompany = state.companies.find((c) => Number(c.id) === Number(state.session?.activeCompanyId));
   state.currentIndustry = normalizeIndustry(activeCompany?.industryType || state.currentIndustry || 'general');
@@ -2368,7 +2383,8 @@ document.addEventListener('keydown', (e) => {
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await api.login({ username: loginUsername.value.trim(), password: loginPassword.value });
+    const preferredCompanyId = Number(window.localStorage.getItem('asw.activeCompanyId') || 0);
+    await api.login({ username: loginUsername.value.trim(), password: loginPassword.value, preferredCompanyId });
     loginForm.reset(); loginMessage.textContent = '';
     await refreshSession();
     if (state.session.clockedIn) { await refreshData(); startDashboardLiveUpdates(); showStatus(`Welcome back, ${state.session.user.username}.`); }
@@ -2381,6 +2397,7 @@ logoutBtn.addEventListener('click', async () => { await api.logout(); stopDashbo
 companySwitcher.addEventListener('change', async () => {
   try {
     await api.switchCompany(Number(companySwitcher.value));
+    window.localStorage.setItem('asw.activeCompanyId', String(companySwitcher.value));
     await refreshSession();
     if (state.session.clockedIn) { await refreshData(); startDashboardLiveUpdates(); showStatus('Active company switched.'); }
     else { await startCamera(); showStatus('Please clock in for the selected company.', 'warning'); }

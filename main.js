@@ -471,14 +471,18 @@ function requireClockIn() {
 
 function ensureAdmin() {
   requireLogin();
-  if (!activeSession.user.isAdmin) {
+  const activeCompanyRole = activeSession.userCompanyRoles?.[String(activeSession.activeCompanyId)] || 'staff';
+  if (!activeSession.user.isAdmin && activeCompanyRole !== 'admin') {
     throw new Error('Admin access required.');
   }
 }
 
 function hasPermission(moduleName, action) {
   if (!activeSession?.user) return false;
-  if (activeSession.user.isAdmin || String(activeSession.user.username || '').toLowerCase() === 'admin') return true;
+  const activeCompanyRole = activeSession.userCompanyRoles?.[String(activeSession.activeCompanyId)] || 'staff';
+  if (activeCompanyRole === 'admin' || activeSession.user.isAdmin || String(activeSession.user.username || '').toLowerCase() === 'admin') return true;
+  const staffAllow = new Set(['dashboard', 'products', 'sales', 'customers', 'invoices', 'reports', 'expenses', 'income', 'cashflow']);
+  if (activeCompanyRole === 'staff' && !staffAllow.has(String(moduleName || '').trim().toLowerCase())) return false;
   const perms = activeSession.user.permissions || {};
   return Boolean(perms?.[moduleName]?.[action]);
 }
@@ -492,8 +496,7 @@ function requirePermission(moduleName, action) {
 
 function userHasCompanyAccess(companyId) {
   if (!activeSession) return false;
-  if (activeSession.user.isAdmin) return true;
-  return activeSession.user.assignedCompanies.includes(companyId);
+  return Boolean(activeSession.userCompanyRoles?.[String(companyId)]);
 }
 
 function setActiveCompany(companyId) {
@@ -717,7 +720,13 @@ async function hydrateSessionPayload() {
     return { authenticated: false };
   }
   activeSession.user = freshUser;
-  const companies = await db.getCompaniesForUser(activeSession.user);
+  const userCompanies = await db.getUserCompanyLinks(activeSession.user.id);
+  const companies = userCompanies.map((entry) => entry.company).filter(Boolean);
+  const companyRoles = userCompanies.reduce((acc, entry) => {
+    acc[String(entry.companyId)] = entry.role === 'admin' ? 'admin' : 'staff';
+    return acc;
+  }, {});
+  activeSession.userCompanyRoles = companyRoles;
   if (!companies.length) {
     activeSession = null;
     return { authenticated: false };
@@ -725,11 +734,20 @@ async function hydrateSessionPayload() {
   if (!companies.some((c) => c.id === activeSession.activeCompanyId)) {
     activeSession.activeCompanyId = companies[0].id;
   }
+  const activeCompanyRole = companyRoles[String(activeSession.activeCompanyId)] || 'staff';
+  activeSession.user = {
+    ...activeSession.user,
+    assignedCompanies: companies.map((c) => c.id),
+    companyRoles: companyRoles,
+    userRole: activeCompanyRole === 'admin' ? 'admin' : (activeSession.user.userRole || 'staff')
+  };
   return {
     authenticated: true,
     user: activeSession.user,
     companies,
+    userCompanies: userCompanies.map((entry) => ({ companyId: entry.companyId, role: entry.role, company: entry.company })),
     activeCompanyId: activeSession.activeCompanyId,
+    activeCompanyRole,
     clockedIn: isClockedInForActiveCompany()
   };
 }
@@ -872,13 +890,21 @@ function registerIpcHandlers() {
   ipcMain.handle('auth:login', async (_event, payload) => {
     const user = await db.authenticateUser(payload || {});
     const profile = await db.getUserAccessProfile(user.id);
-    const companies = await db.getCompaniesForUser(user);
+    const userCompanies = await db.getUserCompanyLinks(user.id);
+    const companies = userCompanies.map((entry) => entry.company).filter(Boolean);
     if (companies.length === 0) {
       throw new Error('No company assigned to this user.');
     }
+    const preferredCompanyId = Number(payload?.preferredCompanyId || 0);
+    const hasPreferred = Number.isInteger(preferredCompanyId) && preferredCompanyId > 0 && companies.some((c) => c.id === preferredCompanyId);
+    const selectedCompanyId = hasPreferred ? preferredCompanyId : companies[0].id;
     activeSession = {
       user: profile || user,
-      activeCompanyId: companies[0].id,
+      activeCompanyId: selectedCompanyId,
+      userCompanyRoles: userCompanies.reduce((acc, entry) => {
+        acc[String(entry.companyId)] = entry.role === 'admin' ? 'admin' : 'staff';
+        return acc;
+      }, {}),
       clockedInCompanies: {}
     };
     return hydrateSessionPayload();
@@ -924,24 +950,18 @@ function registerIpcHandlers() {
 
   ipcMain.handle('companies:getMine', async () => {
     requireLogin();
-    return db.getCompaniesForUser(activeSession.user);
+    return db.getUserCompanyLinks(activeSession.user.id);
   });
 
   ipcMain.handle('companies:create', async (_event, payload) => {
     requirePermission('company', 'create');
     const company = await db.createCompany(payload || {});
-    if (!activeSession.user.isAdmin && company?.id) {
+    if (company?.id) {
+      await db.assignUserCompany(activeSession.user.id, company.id, 'admin');
       const assigned = Array.from(new Set([...(activeSession.user.assignedCompanies || []), company.id]));
-      await db.updateUser({
-        id: activeSession.user.id,
-        username: activeSession.user.username,
-        isAdmin: activeSession.user.isAdmin,
-        assignedCompanies: assigned
-      });
       activeSession.user.assignedCompanies = assigned;
-      if (!activeSession.activeCompanyId) {
-        activeSession.activeCompanyId = company.id;
-      }
+      activeSession.userCompanyRoles = { ...(activeSession.userCompanyRoles || {}), [String(company.id)]: 'admin' };
+      activeSession.activeCompanyId = company.id;
     }
     return company;
   });
