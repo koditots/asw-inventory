@@ -846,15 +846,19 @@ function normalizeMenuItem(rawItem) {
   if (!rawItem) return null;
   if (typeof rawItem === 'string') {
     const legacyRoute = rawItem === 'inventory' ? '/products' : `/${rawItem}`;
-    return { key: rawItem, name: rawItem.replace(/_/g, ' '), route: legacyRoute, icon: rawItem };
+    return { key: rawItem, name: rawItem.replace(/_/g, ' '), route: legacyRoute, icon: rawItem, roles: ['admin', 'manager', 'staff'] };
   }
   const route = String(rawItem.route || '').trim().toLowerCase();
   if (!route) return null;
+  const roles = Array.isArray(rawItem.roles) && rawItem.roles.length
+    ? rawItem.roles.map((x) => normalizeUserRole(x))
+    : ['admin', 'manager', 'staff'];
   return {
     key: String(rawItem.key || rawItem.name || route).trim().toLowerCase().replace(/\s+/g, '_'),
     name: String(rawItem.name || 'Menu').trim(),
     route,
-    icon: String(rawItem.icon || 'dashboard').trim().toLowerCase()
+    icon: String(rawItem.icon || 'dashboard').trim().toLowerCase(),
+    roles
   };
 }
 
@@ -910,18 +914,16 @@ function getAllowedMenuItems() {
   const cfg = sidebarConfig || {};
   const industry = getCurrentIndustry();
   const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
-  const fallback = Array.isArray(cfg.general) ? cfg.general : [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' }];
+  const fallback = Array.isArray(cfg.general) ? cfg.general : [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'] }];
   const baseMenus = (selected.length ? selected : fallback).map(normalizeMenuItem).filter(Boolean);
   const role = getCurrentUserRole();
-  const roleRules = rolePermissions || {};
-  const roleAllowed = Array.isArray(roleRules[role]) ? roleRules[role] : ['*'];
-  const roleFiltered = baseMenus.filter((item) => roleAllowed.includes('*') || roleAllowed.includes(mapMenuKeyForRole(item)));
+  const roleFiltered = baseMenus.filter((item) => Array.isArray(item.roles) && item.roles.includes(role));
   const withExtras = role === 'admin'
     ? roleFiltered.concat(adminExtras.map(normalizeMenuItem).filter(Boolean))
     : roleFiltered;
   const deduped = removeDuplicatesByName(withExtras);
   if (deduped.length) return deduped;
-  return [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home' }];
+  return [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'] }];
 }
 
 function getAllowedMenuKeys() {
@@ -1163,13 +1165,10 @@ function buildSidebarMenu() {
 }
 
 function renderSectionAccess() {
-  const menuItems = buildSidebarMenu().filter((item) => {
-    const moduleName = getPermissionModuleForMenuItem(item);
-    return can(moduleName, 'view');
-  });
+  const menuItems = buildSidebarMenu();
   if (sidebarNav) {
     sidebarNav.innerHTML = '';
-    const safeItems = menuItems.length ? menuItems : [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', section: 'dashboard' }];
+    const safeItems = menuItems.length ? menuItems : [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'], section: 'dashboard' }];
     safeItems.forEach((item) => {
       sidebarNav.insertAdjacentHTML(
         'beforeend',
