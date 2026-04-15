@@ -920,7 +920,9 @@ function getAllowedMenuItems() {
       { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'] },
       { key: 'inventory', name: 'Products', route: '/products', icon: 'box', roles: ['admin', 'manager', 'staff'] },
       { key: 'sales', name: 'Sales', route: '/sales', icon: 'cart', roles: ['admin', 'manager', 'staff'] },
+      { key: 'invoices', name: 'Invoices', route: '/invoices', icon: 'file', roles: ['admin', 'manager', 'staff'] },
       { key: 'customers', name: 'Customers', route: '/customers', icon: 'users', roles: ['admin', 'manager', 'staff'] },
+      { key: 'expenses', name: 'Expenses', route: '/expenses', icon: 'money', roles: ['admin', 'manager', 'staff'] },
       { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart', roles: ['admin', 'manager', 'staff'] }
     ],
     general: [
