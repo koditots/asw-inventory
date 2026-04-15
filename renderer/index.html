@@ -88,8 +88,41 @@
       </nav>
 
       <header class="main-header">
-        <h2 id="sectionTitle">Dashboard</h2>
-        <p class="header-subtitle">Fully offline inventory management with local SQLite storage.</p>
+        <div class="header-top">
+          <div class="header-left">
+            <div class="search-box">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input type="text" id="globalSearch" class="search-input" placeholder="Search products, invoices, customers... (Press /)" />
+            </div>
+          </div>
+          <div class="header-right">
+            <button class="header-btn" id="darkModeToggle" title="Toggle Dark Mode">
+              <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            </button>
+            <button class="header-btn" id="notificationBtn" title="Notifications">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+              <span class="notification-badge" id="notificationBadge">0</span>
+            </button>
+            <div class="user-dropdown" id="userDropdown">
+              <button class="user-dropdown-trigger">
+                <img id="headerUserAvatar" class="header-avatar" alt="User" />
+                <span id="headerUserName">User</span>
+                <svg class="dropdown-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="user-dropdown-menu">
+                <a href="#" class="dropdown-item" data-action="profile">My Profile</a>
+                <a href="#" class="dropdown-item" data-action="settings">Settings</a>
+                <div class="dropdown-divider"></div>
+                <a href="#" class="dropdown-item text-danger" data-action="logout">Logout</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="header-bottom">
+          <h2 id="sectionTitle">Dashboard</h2>
+          <p class="header-subtitle">Fully offline inventory management with local SQLite storage.</p>
+        </div>
       </header>
 
       <section id="section-dashboard" class="app-section active">

@@ -1222,6 +1222,12 @@ function updateAuthUi() {
   loginOverlay.classList.toggle('active', !authed);
   currentUser.textContent = authed ? `Signed in: ${state.session.user.username}` : 'Not signed in';
   setImgOrPlaceholder(currentUserAvatar, state.session?.user?.profileImagePath || '', state.session?.user?.username || 'User');
+  
+  const headerAvatar = document.getElementById('headerUserAvatar');
+  const headerName = document.getElementById('headerUserName');
+  if (headerAvatar) setImgOrPlaceholder(headerAvatar, state.session?.user?.profileImagePath || '', state.session?.user?.username || 'User');
+  if (headerName) headerName.textContent = state.session?.user?.username || 'User';
+  
   clockInOverlay.classList.toggle('active', authed && !state.session.clockedIn);
   if (!authed || !state.session?.clockedIn) stopDashboardLiveUpdates();
 }
@@ -3217,6 +3223,59 @@ changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault();
     } else {
       renderUpdateState({ state: 'disabled', message: 'Update service unavailable in this build.' });
     }
+    
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+    
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    darkModeToggle?.addEventListener('click', () => {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'light');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('theme', 'dark');
+      }
+    });
+    
+    const userDropdown = document.getElementById('userDropdown');
+    const userDropdownTrigger = userDropdown?.querySelector('.user-dropdown-trigger');
+    userDropdownTrigger?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userDropdown?.classList.toggle('open');
+    });
+    document.addEventListener('click', () => {
+      userDropdown?.classList.remove('open');
+    });
+    
+    const globalSearch = document.getElementById('globalSearch');
+    globalSearch?.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      if (query.length < 2) return;
+      const products = state.products?.filter(p => p.name?.toLowerCase().includes(query)).slice(0, 5);
+      const customers = state.customers?.filter(c => c.name?.toLowerCase().includes(query)).slice(0, 5);
+      const invoices = state.invoices?.filter(i => i.invoiceNumber?.toLowerCase().includes(query)).slice(0, 5);
+      console.log('Search results:', { products, customers, invoices });
+    });
+    
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        globalSearch?.focus();
+      }
+      if (e.key === 'n' && e.ctrlKey && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        setActiveSection('invoices');
+      }
+      if (e.key === 'Escape') {
+        closeFormPopup();
+        userDropdown?.classList.remove('open');
+      }
+    });
+    
     applyProMenuLabelsAndIcons();
     applyNavIcons();
     resetSimpleForms();
