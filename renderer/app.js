@@ -915,7 +915,21 @@ function getPermissionModuleForMenuItem(item) {
 }
 
 function getAllowedMenuItems() {
-  const cfg = sidebarConfig || {};
+  const defaultConfig = {
+    retail: [
+      { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'] },
+      { key: 'inventory', name: 'Products', route: '/products', icon: 'box', roles: ['admin', 'manager', 'staff'] },
+      { key: 'sales', name: 'Sales', route: '/sales', icon: 'cart', roles: ['admin', 'manager', 'staff'] },
+      { key: 'customers', name: 'Customers', route: '/customers', icon: 'users', roles: ['admin', 'manager', 'staff'] },
+      { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart', roles: ['admin', 'manager', 'staff'] }
+    ],
+    general: [
+      { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'] },
+      { key: 'transactions', name: 'Transactions', route: '/transactions', icon: 'money', roles: ['admin', 'manager', 'staff'] },
+      { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart', roles: ['admin', 'manager', 'staff'] }
+    ]
+  };
+  const cfg = sidebarConfig || defaultConfig;
   const industry = getCurrentIndustry();
   const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
   const fallback = Array.isArray(cfg.general) ? cfg.general : [{ key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'] }];
@@ -945,7 +959,11 @@ function isSectionAllowed(sectionName) {
 }
 
 function getAllowedDashboardWidgets() {
-  const cfg = dashboardConfig || {};
+  const defaultConfig = {
+    retail: ["wallet_balance", "today_sales", "top_products", "low_stock_alert", "recent_sales"],
+    general: ["wallet_balance", "total_sales", "expenses", "recent_transactions"]
+  };
+  const cfg = dashboardConfig || defaultConfig;
   const industry = getCurrentIndustry();
   const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
   const fallback = Array.isArray(cfg.general) ? cfg.general : ['wallet_balance'];
@@ -962,7 +980,11 @@ function getAllowedDashboardWidgets() {
 }
 
 function getAllowedReports() {
-  const cfg = reportConfig || {};
+  const defaultConfig = {
+    retail: ["sales_report", "product_performance", "inventory_report", "profit_report"],
+    general: ["sales_report", "expense_report", "cashflow_report"]
+  };
+  const cfg = reportConfig || defaultConfig;
   const industry = getCurrentIndustry();
   const selected = Array.isArray(cfg[industry]) ? cfg[industry] : [];
   const fallback = Array.isArray(cfg.general) ? cfg.general : ['sales_report'];
