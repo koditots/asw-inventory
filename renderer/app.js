@@ -1615,42 +1615,102 @@ function renderInvoicePreview() {
 
 function renderInvoices() {
   invoicesTableBody.innerHTML = '';
-  if (!state.invoices.length) {
-    invoicesTableBody.innerHTML = `<tr><td colspan="12">
-      <div class="empty-state">
-        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/>
-        </svg>
-        <div class="empty-state-title">No invoices yet</div>
-        <div class="empty-state-desc">Create your first invoice to get started</div>
-        <button class="btn btn-primary" onclick="setActiveSection('invoices'); document.getElementById('invoiceForm').scrollIntoView({behavior:'smooth'})">
-          Create New Invoice
-        </button>
-      </div>
-    </td></tr>`;
+  const invoices = state.invoices || [];
+  
+  updateInvoiceKPIs(invoices);
+  
+  if (!invoices.length) {
+    invoicesTableBody.innerHTML = `<tr>
+      <td colspan="7">
+        <div class="empty-state">
+          <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/>
+          </svg>
+          <div class="empty-state-title">No invoices yet</div>
+          <div class="empty-state-desc">Create your first invoice to get started</div>
+        </div>
+      </td></tr>`;
     return;
   }
-  state.invoices.forEach((inv) => {
+  
+  invoices.forEach((inv) => {
     const paymentStatus = String(inv.paymentStatus || 'unpaid');
+    const dueDate = inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '-';
     invoicesTableBody.insertAdjacentHTML('beforeend', `<tr>
-      <td>${inv.invoiceNumber}</td>
-      <td>${invoiceTypeLabel(inv.type)}</td>
-      <td>${inv.customerName}</td>
-      <td>${new Date(inv.date).toLocaleDateString()}</td>
-      <td>${inv.status}</td>
-      <td>${currency(inv.totalAmount)}</td>
-      <td>${currency(inv.amountPaid || 0)}</td>
-      <td>${currency(inv.balance || 0)}</td>
+      <td class="invoice-number">${inv.invoiceNumber || '-'}</td>
+      <td class="customer-name">${inv.customerName || '-'}</td>
+      <td>${inv.date ? new Date(inv.date).toLocaleDateString() : '-'}</td>
+      <td>${dueDate}</td>
+      <td class="amount">${currency(inv.totalAmount || 0)}</td>
       <td><span class="${paymentStatusClass(paymentStatus)}">${paymentStatusLabel(paymentStatus)}</span></td>
-      <td>${inv.createdByUsername || 'N/A'}</td>
-      <td>${inv.lastPaymentByUsername || 'N/A'}</td>
-      <td>
-        ${can('invoices', 'view') ? `<button class="btn btn-sm btn-outline-secondary me-1" data-action="view-invoice" data-id="${inv.id}">View</button>` : ''}
-        ${can('invoices', 'edit') ? `<button class="btn btn-sm btn-outline-success me-1" data-action="add-payment" data-id="${inv.id}">Add Payment</button>` : ''}
-        ${can('invoices', 'print') ? `<button class="btn btn-sm btn-outline-primary" data-action="export-invoice" data-id="${inv.id}">Export PDF</button>` : ''}
+      <td class="actions">
+        ${can('invoices', 'view') ? `<button class="btn-icon" data-action="view-invoice" data-id="${inv.id}" title="View"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+        ${can('invoices', 'edit') ? `<button class="btn-icon" data-action="add-payment" data-id="${inv.id}" title="Add Payment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></button>` : ''}
+        ${can('invoices', 'print') ? `<button class="btn-icon" data-action="export-invoice" data-id="${inv.id}" title="Export PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>` : ''}
       </td>
     </tr>`);
   });
+  
+  updateInvoiceSidebar(invoices);
+}
+
+function updateInvoiceKPIs(invoices) {
+  const total = invoices.length;
+  const paid = invoices.filter(i => (i.paymentStatus || i.status) === 'paid').length;
+  const pending = invoices.filter(i => (i.paymentStatus || i.status) === 'partial' || (i.paymentStatus || i.status) === 'unpaid').length;
+  const overdue = invoices.filter(i => {
+    if (i.paymentStatus !== 'paid' && i.dueDate) {
+      return new Date(i.dueDate) < new Date();
+    }
+    return false;
+  }).length;
+  const revenue = invoices.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0);
+  
+  const totalEl = document.getElementById('invoiceTotalCount');
+  const paidEl = document.getElementById('invoicePaidCount');
+  const pendingEl = document.getElementById('invoicePendingCount');
+  const overdueEl = document.getElementById('invoiceOverdueCount');
+  const revenueEl = document.getElementById('invoiceTotalRevenue');
+  
+  if (totalEl) totalEl.textContent = total;
+  if (paidEl) paidEl.textContent = paid;
+  if (pendingEl) pendingEl.textContent = pending;
+  if (overdueEl) overdueEl.textContent = overdue;
+  if (revenueEl) revenueEl.textContent = currency(revenue);
+}
+
+function updateInvoiceSidebar(invoices) {
+  const thisMonth = new Date().getMonth();
+  const thisMonthInvoices = invoices.filter(i => {
+    if (!i.date) return false;
+    const d = new Date(i.date);
+    return d.getMonth() === thisMonth && d.getFullYear() === new Date().getFullYear();
+  });
+  const monthTotal = thisMonthInvoices.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0);
+  
+  const outstanding = invoices.reduce((sum, i) => sum + Number(i.balance || 0), 0);
+  const overdueAmount = invoices.filter(i => i.paymentStatus !== 'paid' && i.dueDate && new Date(i.dueDate) < new Date())
+    .reduce((sum, i) => sum + Number(i.balance || 0), 0);
+  
+  const paid = invoices.filter(i => i.paymentStatus === 'paid').length;
+  const partial = invoices.filter(i => i.paymentStatus === 'partial').length;
+  const unpaid = invoices.filter(i => i.paymentStatus === 'unpaid').length;
+  const total = invoices.length || 1;
+  
+  const setContent = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setContent('invoiceThisMonth', currency(monthTotal));
+  setContent('invoiceOutstanding', currency(outstanding));
+  setContent('invoiceOverdueAmount', currency(overdueAmount));
+  setContent('breakdownPaid', Math.round((paid / total) * 100) + '%');
+  setContent('breakdownPending', Math.round((partial / total) * 100) + '%');
+  setContent('breakdownOverdue', Math.round((unpaid / total) * 100) + '%');
+  
+  const paidBar = document.querySelector('.bar-fill.paid');
+  const pendingBar = document.querySelector('.bar-fill.pending');
+  const overdueBar = document.querySelector('.bar-fill.overdue');
+  if (paidBar) paidBar.style.width = (paid / total * 100) + '%';
+  if (pendingBar) pendingBar.style.width = (partial / total * 100) + '%';
+  if (overdueBar) overdueBar.style.width = (unpaid / total * 100) + '%';
 }
 
 function loadInvoiceIntoDraft(inv) {
@@ -2822,6 +2882,77 @@ invoiceAmountPaid.addEventListener('input', () => { state.invoiceDraft.amountPai
 invoiceValidityPeriod.addEventListener('input', () => { state.invoiceDraft.validityPeriod = String(invoiceValidityPeriod.value || '').trim(); renderInvoicePreview(); });
 invoiceNotes.addEventListener('input', () => { state.invoiceDraft.notes = String(invoiceNotes.value || '').trim(); renderInvoicePreview(); });
 invoiceNumber.addEventListener('input', () => { state.invoiceDraft.invoiceNumber = invoiceNumber.value.trim(); renderInvoicePreview(); });
+
+const invoiceSearchInput = $('invoiceSearchInput');
+const invoiceStatusFilter = $('invoiceStatusFilter');
+
+invoiceSearchInput?.addEventListener('input', (e) => {
+  const query = e.target.value.toLowerCase().trim();
+  const filtered = state.invoices.filter(inv => 
+    !query || 
+    inv.invoiceNumber?.toLowerCase().includes(query) ||
+    inv.customerName?.toLowerCase().includes(query)
+  );
+  const tbody = document.getElementById('invoicesTableBody');
+  tbody.innerHTML = '';
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center">No matching invoices</td></tr>';
+    return;
+  }
+  filtered.forEach((inv) => {
+    const paymentStatus = String(inv.paymentStatus || 'unpaid');
+    const dueDate = inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '-';
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td class="invoice-number">${inv.invoiceNumber || '-'}</td>
+      <td class="customer-name">${inv.customerName || '-'}</td>
+      <td>${inv.date ? new Date(inv.date).toLocaleDateString() : '-'}</td>
+      <td>${dueDate}</td>
+      <td class="amount">${currency(inv.totalAmount || 0)}</td>
+      <td><span class="${paymentStatusClass(paymentStatus)}">${paymentStatusLabel(paymentStatus)}</span></td>
+      <td class="actions">
+        ${can('invoices', 'view') ? `<button class="btn-icon" data-action="view-invoice" data-id="${inv.id}" title="View"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+        ${can('invoices', 'edit') ? `<button class="btn-icon" data-action="add-payment" data-id="${inv.id}" title="Add Payment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></button>` : ''}
+        ${can('invoices', 'print') ? `<button class="btn-icon" data-action="export-invoice" data-id="${inv.id}" title="Export PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>` : ''}
+      </td>
+    </tr>`);
+  });
+});
+
+invoiceStatusFilter?.addEventListener('change', (e) => {
+  const status = e.target.value;
+  const filtered = !status ? state.invoices : state.invoices.filter(inv => {
+    const ps = inv.paymentStatus || 'unpaid';
+    if (status === 'paid') return ps === 'paid';
+    if (status === 'partial') return ps === 'partial';
+    if (status === 'unpaid') return ps === 'unpaid';
+    if (status === 'overdue') return ps !== 'paid' && inv.dueDate && new Date(inv.dueDate) < new Date();
+    return true;
+  });
+  const tbody = document.getElementById('invoicesTableBody');
+  tbody.innerHTML = '';
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center">No invoices with this status</td></tr>';
+    return;
+  }
+  filtered.forEach((inv) => {
+    const paymentStatus = String(inv.paymentStatus || 'unpaid');
+    const dueDate = inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '-';
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td class="invoice-number">${inv.invoiceNumber || '-'}</td>
+      <td class="customer-name">${inv.customerName || '-'}</td>
+      <td>${inv.date ? new Date(inv.date).toLocaleDateString() : '-'}</td>
+      <td>${dueDate}</td>
+      <td class="amount">${currency(inv.totalAmount || 0)}</td>
+      <td><span class="${paymentStatusClass(paymentStatus)}">${paymentStatusLabel(paymentStatus)}</span></td>
+      <td class="actions">
+        ${can('invoices', 'view') ? `<button class="btn-icon" data-action="view-invoice" data-id="${inv.id}" title="View"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+        ${can('invoices', 'edit') ? `<button class="btn-icon" data-action="add-payment" data-id="${inv.id}" title="Add Payment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></button>` : ''}
+        ${can('invoices', 'print') ? `<button class="btn-icon" data-action="export-invoice" data-id="${inv.id}" title="Export PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>` : ''}
+      </td>
+    </tr>`);
+  });
+});
+
 invoiceRegenerateBtn.addEventListener('click', async () => {
   try { await refreshInvoiceNumber(); renderInvoicePreview(); } catch (err) { showStatus(err.message || 'Unable to generate number.', 'error'); }
 });
