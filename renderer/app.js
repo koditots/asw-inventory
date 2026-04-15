@@ -185,6 +185,9 @@ const rolePermissions = (() => {
   }
 })();
 
+const ENABLE_MULTI_INDUSTRY = false;
+const ACTIVE_INDUSTRY = "retail";
+
 const state = {
   session: null,
   companies: [],
@@ -833,6 +836,7 @@ function getCurrentUserRole() {
 }
 
 function getCurrentIndustry() {
+  if (!ENABLE_MULTI_INDUSTRY) return "retail";
   const sessionIndustry = normalizeIndustry(state.currentIndustry || '');
   if (sessionIndustry !== 'general' || !state.session?.authenticated) return sessionIndustry;
   return normalizeIndustry(state.company?.industryType || state.systemConfig?.industryType || state.moduleConfig?.industry || 'general');
@@ -2329,6 +2333,15 @@ async function resetInvoiceDraft() {
   renderInvoicePaymentHistory([], 0);
 }
 function applyRouteFromHash() {
+  if (!ENABLE_MULTI_INDUSTRY) {
+    const hash = String(window.location.hash || '').replace(/^#/, '');
+    const normalized = hash.startsWith('/') ? hash : (hash ? `/${hash}` : '/dashboard');
+    const protectedRoutes = ['/rooms', '/bookings', '/guests', '/kitchen', '/drugs', '/patients', '/prescriptions', '/expiry'];
+    if (protectedRoutes.includes(normalized)) {
+      window.location.hash = '#/dashboard';
+      return;
+    }
+  }
   const hash = String(window.location.hash || '').replace(/^#/, '');
   const normalized = hash.startsWith('/') ? hash : (hash ? `/${hash}` : '/dashboard');
   const mappedSection = sectionFromRoute(normalized);
@@ -2930,14 +2943,15 @@ companyCreateForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
     const name = newCompanyName.value.trim();
-    const industryType = String(newCompanyIndustryType?.value || '').trim();
+    const industryType = ENABLE_MULTI_INDUSTRY ? String(newCompanyIndustryType?.value || '').trim() : 'retail';
     const initialBalanceValue = String(newCompanyInitialBalance?.value || '').trim();
     const initialBalance = initialBalanceValue ? Number(initialBalanceValue) : 0;
     const industryConfirmed = Boolean(newCompanyIndustryConfirm?.checked);
     if (!name) throw new Error('Company name is required.');
     if (!industryType) throw new Error('Industry selection is required.');
     if (!Number.isFinite(initialBalance) || initialBalance < 0) throw new Error('Initial balance must be zero or greater.');
-    if (!industryConfirmed) throw new Error('Please confirm that industry cannot be changed after setup.');
+    if (!ENABLE_MULTI_INDUSTRY && !industryConfirmed) throw new Error('Please confirm the setup.');
+    if (ENABLE_MULTI_INDUSTRY && !industryConfirmed) throw new Error('Please confirm that industry cannot be changed after setup.');
     const created = await api.createCompany({ name, industryType, initialBalance, industryConfirmed });
     if (created?.id) {
       await api.switchCompany(Number(created.id));
@@ -3183,6 +3197,12 @@ changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault();
     applyNavIcons();
     resetSimpleForms();
     await resetInvoiceDraft();
+    if (!ENABLE_MULTI_INDUSTRY) {
+      const industryWrapper = document.getElementById('industrySelectWrapper');
+      if (industryWrapper) industryWrapper.style.display = 'none';
+      const confirmLabel = document.querySelector('label[for="newCompanyIndustryConfirm"]');
+      if (confirmLabel) confirmLabel.textContent = 'I confirm to create this company.';
+    }
     await refreshSession();
     if (state.session?.authenticated) {
       if (state.session.clockedIn) { await refreshData(); applyRouteFromHash(); startDashboardLiveUpdates(); showStatus('ASW Inventory ready.'); }
