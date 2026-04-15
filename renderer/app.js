@@ -1767,6 +1767,11 @@ function renderRoles() {
 function drawDashboardSalesChart(periods = {}) {
   if (!dashboardSalesChart) return;
   const canvas = dashboardSalesChart;
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth;
+    canvas.height = 280;
+  }
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const labels = ['Daily', 'Weekly', 'Monthly'];
@@ -1793,7 +1798,7 @@ function drawDashboardSalesChart(periods = {}) {
   const ticks = 4;
   const scaleMax = hasData ? maxValue * 1.1 : 1;
   ctx.fillStyle = '#64748b';
-  ctx.font = '12px Segoe UI';
+  ctx.font = '12px Inter, Segoe UI';
   for (let i = 0; i <= ticks; i += 1) {
     const y = pad.top + ((plotH / ticks) * i);
     ctx.strokeStyle = '#edf1f7';
@@ -1834,7 +1839,44 @@ const dashboardMetricIcons = {
   dashboardProjectedBalance: navSvgs.reports
 };
 
-function ensureDashboardMetricIcons() {
+function updateDonutChart(income, expense) {
+  const donutChart = document.getElementById('donutChart');
+  const donutIncome = document.getElementById('donutIncome');
+  const walletInflowEl = $('walletInflow');
+  const walletOutflowLegendEl = $('walletOutflowLegend');
+  if (!donutChart) return;
+  const total = income + expense;
+  if (total <= 0) {
+    donutChart.style.background = 'conic-gradient(var(--line) 0deg 360deg)';
+  } else {
+    const incomeDeg = (income / total) * 360;
+    donutChart.style.background = `conic-gradient(var(--success) 0deg ${incomeDeg}deg, var(--danger) ${incomeDeg}deg 360deg)`;
+  }
+  if (donutIncome) donutIncome.textContent = currency(income);
+  if (walletInflowEl) walletInflowEl.textContent = currency(income);
+  if (walletOutflowLegendEl) walletOutflowLegendEl.textContent = currency(expense);
+}
+
+function renderRecentInvoicesDashboard() {
+  const tbody = document.getElementById('recentInvoicesBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const recentInvoices = state.invoices?.slice(0, 5) || [];
+  if (!recentInvoices.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center">No recent invoices</td></tr>';
+    return;
+  }
+  recentInvoices.forEach((inv) => {
+    const status = inv.paymentStatus || 'unpaid';
+    const statusClass = status === 'paid' ? 'badge-success' : status === 'partial' ? 'badge-warning' : 'badge-danger';
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td>${inv.invoiceNumber || '-'}</td>
+      <td>${inv.customerName || '-'}</td>
+      <td>${currency(inv.totalAmount || 0)}</td>
+      <td><span class="badge ${statusClass}">${status === 'paid' ? 'Paid' : status === 'partial' ? 'Partial' : 'Pending'}</span></td>
+    </tr>`);
+  });
+}
   Object.entries(dashboardMetricIcons).forEach(([statId, iconSvg]) => {
     const statEl = $(statId);
     if (!statEl) return;
@@ -1871,8 +1913,16 @@ function renderDashboard(stats, salesReport = null) {
   }
   drawDashboardSalesChart(stats.periods || {});
   lowStockListEl.innerHTML = '';
-  if (!stats.lowStock?.length) lowStockListEl.innerHTML = '<li style="background:#effcf3;color:#2d7d3c;">No low stock alerts.</li>';
-  else for (const l of stats.lowStock) lowStockListEl.insertAdjacentHTML('beforeend', `<li>${l.name} - ${l.quantity} available (min ${l.minStock})</li>`);
+  const lowStockEmpty = document.getElementById('lowStockEmpty');
+  if (!stats.lowStock?.length) {
+    if (lowStockEmpty) lowStockEmpty.style.display = 'block';
+    lowStockListEl.innerHTML = '';
+  } else {
+    if (lowStockEmpty) lowStockEmpty.style.display = 'none';
+    for (const l of stats.lowStock) lowStockListEl.insertAdjacentHTML('beforeend', `<li><span class="stock-name">${l.name}</span><span class="stock-qty">${l.quantity} left</span></li>`);
+  }
+  updateDonutChart(stats.totalInflow || 0, stats.totalOutflow || 0);
+  renderRecentInvoicesDashboard();
   const isAdmin = Boolean(state.session?.user?.isAdmin);
   if (dashboardAdminSection) dashboardAdminSection.style.display = isAdmin ? '' : 'none';
   if (isAdmin) {

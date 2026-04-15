@@ -175,57 +175,165 @@
       </header>
 
       <section id="section-dashboard" class="app-section active">
-        <div class="row g-3 mb-3">
-          <div class="col-lg-4">
-            <article class="metric-card">
-              <p>Total Products</p>
-              <h3 id="totalProducts">0</h3>
-            </article>
+          
+          <!-- SECTION 1: KPI STRIP (Compact horizontal) -->
+          <div class="kpi-strip">
+            <div class="kpi-chip">
+              <div class="kpi-icon revenue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Total Revenue</span>
+                <span class="kpi-value" id="dashboardRevenue">$0.00</span>
+              </div>
+            </div>
+            <div class="kpi-chip">
+              <div class="kpi-icon outstanding">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Outstanding</span>
+                <span class="kpi-value" id="dashboardOutstandingRevenue">$0.00</span>
+              </div>
+            </div>
+            <div class="kpi-chip">
+              <div class="kpi-icon invoice">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/></svg>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Invoices</span>
+                <span class="kpi-value" id="totalTransactions">0</span>
+              </div>
+            </div>
+            <div class="kpi-chip">
+              <div class="kpi-icon expense">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Total Expenses</span>
+                <span class="kpi-value" id="walletOutflow">$0.00</span>
+              </div>
+            </div>
+            <div class="kpi-chip">
+              <div class="kpi-icon balance">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h6l2-4 4 8 2-4h4"/></svg>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Balance</span>
+                <span class="kpi-value" id="walletBalance">$0.00</span>
+              </div>
+            </div>
           </div>
-          <div class="col-lg-4">
-            <article class="metric-card">
-              <p>Total Sales</p>
-              <h3 id="totalSales">$0.00</h3>
-            </article>
-          </div>
-          <div class="col-lg-4">
-            <article class="metric-card">
-              <p>Total Transactions</p>
-              <h3 id="totalTransactions">0</h3>
-            </article>
-          </div>
-        </div>
-        <div class="row g-3 mb-3">
-          <div class="col-lg-4"><article class="metric-card"><p>Daily Revenue</p><h3 id="dailyRevenue">$0.00</h3></article></div>
-          <div class="col-lg-4"><article class="metric-card"><p>Weekly Revenue</p><h3 id="weeklyRevenue">$0.00</h3></article></div>
-          <div class="col-lg-4"><article class="metric-card"><p>Monthly Revenue</p><h3 id="monthlyRevenue">$0.00</h3></article></div>
-        </div>
-        <div class="row g-3 mb-3">
-          <div class="col-lg-4"><article class="metric-card"><p>Company Balance</p><h3 id="walletBalance">$0.00</h3><small id="walletStatusText">Positive</small></article></div>
-          <div class="col-lg-4"><article class="metric-card"><p>Total Inflow</p><h3 id="walletInflow">$0.00</h3></article></div>
-          <div class="col-lg-4"><article class="metric-card"><p>Total Outflow</p><h3 id="walletOutflow">$0.00</h3></article></div>
-        </div>
-        <div class="row g-3 mb-3">
-          <div class="col-lg-4"><article class="metric-card"><p>Revenue (Earned)</p><h3 id="dashboardRevenue">$0.00</h3></article></div>
-          <div class="col-lg-4"><article class="metric-card"><p>Cash Received</p><h3 id="dashboardCashReceived">$0.00</h3></article></div>
-          <div class="col-lg-4"><article class="metric-card"><p>Outstanding Revenue</p><h3 id="dashboardOutstandingRevenue">$0.00</h3></article></div>
-          <div class="col-lg-4" id="dashboardProjectedBalanceWrap" style="display:none;"><article class="metric-card"><p>Projected Balance</p><h3 id="dashboardProjectedBalance">$0.00</h3></article></div>
-        </div>
 
-        <article class="panel-card">
-          <div class="panel-title">Stock Alerts (Below Minimum)</div>
-          <ul id="lowStockList" class="low-stock-list"></ul>
-        </article>
-        <div class="row g-3 mt-1">
-          <div class="col-12">
-            <article class="panel-card">
-              <div class="panel-title">Sales Trend</div>
-              <canvas id="dashboardSalesChart" class="dashboard-sales-chart" width="860" height="220"></canvas>
-              <div id="dashboardChartEmpty" class="text-muted mt-2"></div>
-            </article>
+          <!-- SECTION 2: MAIN CHARTS AREA -->
+          <div class="dashboard-grid">
+            <div class="chart-main">
+              <div class="chart-card">
+                <div class="chart-header">
+                  <h3>Revenue Overview</h3>
+                  <div class="chart-period">
+                    <select id="chartPeriodSelect" class="form-select form-select-sm">
+                      <option value="weekly">This Week</option>
+                      <option value="monthly" selected>This Month</option>
+                      <option value="yearly">This Year</option>
+                    </select>
+                  </div>
+                </div>
+                <canvas id="dashboardSalesChart" class="dashboard-sales-chart"></canvas>
+                <div id="dashboardChartEmpty" class="text-muted mt-2"></div>
+              </div>
+            </div>
+            
+            <div class="chart-side">
+              <div class="chart-card mini-chart">
+                <div class="chart-header">
+                  <h3>Income vs Expense</h3>
+                </div>
+                <div class="donut-chart-wrap">
+                  <div class="donut-chart" id="donutChart">
+                    <div class="donut-center">
+                      <span id="donutIncome">$0</span>
+                      <small>Income</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="donut-legend">
+                  <div class="legend-item">
+                    <span class="legend-dot income"></span>
+                    <span>Income: <strong id="walletInflow">$0.00</strong></span>
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-dot expense"></span>
+                    <span>Expense: <strong id="walletOutflowLegend">$0.00</strong></span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="chart-card mini-chart">
+                <div class="chart-header">
+                  <h3>Quick Stats</h3>
+                </div>
+                <div class="quick-stats">
+                  <div class="quick-stat">
+                    <span class="stat-label">Products</span>
+                    <span class="stat-value" id="totalProducts">0</span>
+                  </div>
+                  <div class="quick-stat">
+                    <span class="stat-label">Sales</span>
+                    <span class="stat-value" id="totalSales">$0</span>
+                  </div>
+                  <div class="quick-stat">
+                    <span class="stat-label">Cash Received</span>
+                    <span class="stat-value" id="dashboardCashReceived">$0</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div id="dashboardAdminSection" class="row g-3 mt-1">
+
+          <!-- SECTION 3: SECONDARY INSIGHTS -->
+          <div class="insights-grid">
+            <div class="insight-card">
+              <div class="insight-header">
+                <h3>Recent Invoices</h3>
+                <button class="btn btn-sm btn-link" onclick="setActiveSection('invoices')">View All</button>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm">
+                  <thead><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
+                  <tbody id="recentInvoicesBody">
+                    <tr><td colspan="4" class="text-muted text-center">No recent invoices</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <div class="insight-card">
+              <div class="insight-header">
+                <h3>Top Products</h3>
+                <button class="btn btn-sm btn-link" onclick="setActiveSection('products')">View All</button>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm">
+                  <thead><tr><th>Product</th><th>Units</th><th>Revenue</th></tr></thead>
+                  <tbody id="dashboardTopProductsBody">
+                    <tr><td colspan="3" class="text-muted text-center">No sales data</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <div class="insight-card alerts-card">
+              <div class="insight-header">
+                <h3>Low Stock Alerts</h3>
+                <button class="btn btn-sm btn-link" onclick="setActiveSection('products')">Manage</button>
+              </div>
+              <ul id="lowStockList" class="low-stock-list"></ul>
+              <div id="lowStockEmpty" class="empty-hint">All products are well stocked</div>
+            </div>
+          </div>
+
+          <div id="dashboardAdminSection" class="admin-insights">
           <div class="col-lg-6">
             <article class="panel-card">
               <div class="panel-title">Top-Selling Products (Admin)</div>
