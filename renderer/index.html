@@ -90,9 +90,23 @@
       <header class="main-header">
         <div class="header-top">
           <div class="header-left">
-            <div class="search-box">
-              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input type="text" id="globalSearch" class="search-input" placeholder="Search products, invoices, customers... (Press /)" />
+            <div class="quick-actions" style="display: flex; gap: 8px; align-items: center;">
+              <div class="search-box">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input type="text" id="globalSearch" class="search-input" placeholder="Search... (Press /)" />
+              </div>
+              <div class="dropdown" id="quickActionsDropdown">
+                <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                  + New
+                </button>
+                <ul class="dropdown-menu">
+                  <li><a class="dropdown-item" href="#" data-action="new-invoice">New Invoice</a></li>
+                  <li><a class="dropdown-item" href="#" data-action="new-product">Add Product</a></li>
+                  <li><a class="dropdown-item" href="#" data-action="new-customer">Add Customer</a></li>
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item" href="#" data-action="record-sale">Record Sale</a></li>
+                </ul>
+              </div>
             </div>
           </div>
           <div class="header-right">
@@ -104,6 +118,41 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
               <span class="notification-badge" id="notificationBadge">0</span>
             </button>
+            <div class="notification-dropdown" id="notificationDropdown">
+              <div class="notification-header">
+                <span>Notifications</span>
+                <button class="mark-read-btn">Mark all read</button>
+              </div>
+              <div class="notification-list" id="notificationList">
+                <div class="notification-item">
+                  <div class="notification-icon success">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+                  </div>
+                  <div class="notification-content">
+                    <p class="notification-text">Invoice #INV-001 paid</p>
+                    <span class="notification-time">2 hours ago</span>
+                  </div>
+                </div>
+                <div class="notification-item">
+                  <div class="notification-icon warning">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                  </div>
+                  <div class="notification-content">
+                    <p class="notification-text">Low stock alert: 3 products</p>
+                    <span class="notification-time">5 hours ago</span>
+                  </div>
+                </div>
+                <div class="notification-item">
+                  <div class="notification-icon primary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/></svg>
+                  </div>
+                  <div class="notification-content">
+                    <p class="notification-text">New invoice created</p>
+                    <span class="notification-time">1 day ago</span>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="user-dropdown" id="userDropdown">
               <button class="user-dropdown-trigger">
                 <img id="headerUserAvatar" class="header-avatar" alt="User" />

@@ -923,7 +923,8 @@ function getAllowedMenuItems() {
       { key: 'invoices', name: 'Invoices', route: '/invoices', icon: 'file', roles: ['admin', 'manager', 'staff'] },
       { key: 'customers', name: 'Customers', route: '/customers', icon: 'users', roles: ['admin', 'manager', 'staff'] },
       { key: 'expenses', name: 'Expenses', route: '/expenses', icon: 'money', roles: ['admin', 'manager', 'staff'] },
-      { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart', roles: ['admin', 'manager', 'staff'] }
+      { key: 'reports', name: 'Reports', route: '/reports', icon: 'chart', roles: ['admin', 'manager', 'staff'] },
+      { key: 'settings', name: 'Settings', route: '/settings', icon: 'settings', roles: ['admin'] }
     ],
     general: [
       { key: 'dashboard', name: 'Dashboard', route: '/dashboard', icon: 'home', roles: ['admin', 'manager', 'staff'] },
@@ -1353,7 +1354,21 @@ function renderProducts() {
     return qOk && cOk && sOk;
   });
   productsTableBody.innerHTML = '';
-  if (!rows.length) return (productsTableBody.innerHTML = '<tr><td colspan="6">No products found.</td></tr>');
+  if (!rows.length) {
+    productsTableBody.innerHTML = `<tr><td colspan="6">
+      <div class="empty-state">
+        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/>
+        </svg>
+        <div class="empty-state-title">No products yet</div>
+        <div class="empty-state-desc">Add your first product to start selling</div>
+        <button class="btn btn-primary" onclick="setActiveSection('products'); document.getElementById('productForm').scrollIntoView({behavior:'smooth'})">
+          Add New Product
+        </button>
+      </div>
+    </td></tr>`;
+    return;
+  }
   for (const p of rows) productsTableBody.insertAdjacentHTML('beforeend', `<tr><td><div class="product-name-cell"><span class="product-name-main">${p.name}</span><span class="product-name-sub">ID #${p.id} | Min stock: ${p.minStock}</span></div></td><td>${p.category}</td><td>${p.supplierName || 'N/A'}</td><td>${currency(p.price)}</td><td><span class="${p.quantity <= p.minStock ? 'stock-pill low' : 'stock-pill'}">${p.quantity}</span></td><td>${can('products', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-product" data-id="${p.id}">Edit</button>` : ''} ${can('products', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-product" data-id="${p.id}">Delete</button>` : ''} ${can('sales', 'create') ? `<button class="btn btn-sm btn-outline-success" data-action="sell-product" data-id="${p.id}">Sell</button>` : ''}</td></tr>`);
 }
 function renderBasicTable(target, rows, colspan, emptyText) {
@@ -1363,14 +1378,41 @@ function renderBasicTable(target, rows, colspan, emptyText) {
 
 function renderCategories() {
   renderBasicTable(categoriesTableBody, state.categories, 3, 'No categories available.');
+  if (!state.categories.length && categoriesTableBody) {
+    categoriesTableBody.innerHTML = `<tr><td colspan="3">
+      <div class="empty-state">
+        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+        <div class="empty-state-title">No categories yet</div>
+        <div class="empty-state-desc">Add product categories to organize your inventory</div>
+      </div>
+    </td></tr>`;
+  }
   for (const c of state.categories) categoriesTableBody.insertAdjacentHTML('beforeend', `<tr><td>${c.id}</td><td>${c.name}</td><td>${can('categories', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-category" data-id="${c.id}">Edit</button>` : ''} ${can('categories', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-category" data-id="${c.id}">Delete</button>` : ''}</td></tr>`);
 }
 function renderSuppliers() {
   renderBasicTable(suppliersTableBody, state.suppliers, 4, 'No suppliers available.');
+  if (!state.suppliers.length && suppliersTableBody) {
+    suppliersTableBody.innerHTML = `<tr><td colspan="4">
+      <div class="empty-state">
+        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7h18v12H3z"/><path d="M7 7V4h10v3"/></svg>
+        <div class="empty-state-title">No suppliers yet</div>
+        <div class="empty-state-desc">Add suppliers to manage your product sources</div>
+      </div>
+    </td></tr>`;
+  }
   for (const s of state.suppliers) suppliersTableBody.insertAdjacentHTML('beforeend', `<tr><td>${s.id}</td><td>${s.name}</td><td>${s.contactInfo || 'N/A'}</td><td>${can('suppliers', 'edit') ? `<button class="btn btn-sm btn-outline-secondary" data-action="edit-supplier" data-id="${s.id}">Edit</button>` : ''} ${can('suppliers', 'delete') ? `<button class="btn btn-sm btn-outline-danger" data-action="delete-supplier" data-id="${s.id}">Delete</button>` : ''}</td></tr>`);
 }
 function renderCustomers() {
   renderBasicTable(customersTableBody, state.customers, 7, 'No customers available.');
+  if (!state.customers.length && customersTableBody) {
+    customersTableBody.innerHTML = `<tr><td colspan="7">
+      <div class="empty-state">
+        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+        <div class="empty-state-title">No customers yet</div>
+        <div class="empty-state-desc">Add customers to track sales and invoices</div>
+      </div>
+    </td></tr>`;
+  }
   for (const c of state.customers) {
     const outstanding = Number(c.outstandingBalance || 0);
     const isDebtor = outstanding > 0;
@@ -1418,8 +1460,13 @@ function renderCashflow() {
 }
 
 const invoiceTypeLabel = (type) => (type === 'performa' || type === 'proforma' ? 'Performa Invoice' : type === 'quote' ? 'Quote' : 'Invoice');
-const paymentStatusLabel = (status) => (status === 'paid' ? 'Paid' : status === 'partial' ? 'Partial' : 'Unpaid');
-const paymentStatusClass = (status) => (status === 'paid' ? 'stock-pill' : 'stock-pill low');
+const paymentStatusLabel = (status) => (status === 'paid' ? 'Paid' : status === 'partial' ? 'Partial' : status === 'overdue' ? 'Overdue' : 'Pending');
+const paymentStatusClass = (status) => {
+  if (status === 'paid') return 'badge badge-success';
+  if (status === 'partial') return 'badge badge-warning';
+  if (status === 'overdue') return 'badge badge-danger';
+  return 'badge badge-primary';
+};
 
 function getInvoiceBreakdown() {
   const subtotal = Number((state.invoiceDraft.items || []).reduce((sum, item) => sum + Number(item.lineTotal || 0), 0).toFixed(2));
@@ -1569,7 +1616,18 @@ function renderInvoicePreview() {
 function renderInvoices() {
   invoicesTableBody.innerHTML = '';
   if (!state.invoices.length) {
-    invoicesTableBody.innerHTML = '<tr><td colspan="12">No documents created yet.</td></tr>';
+    invoicesTableBody.innerHTML = `<tr><td colspan="12">
+      <div class="empty-state">
+        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/>
+        </svg>
+        <div class="empty-state-title">No invoices yet</div>
+        <div class="empty-state-desc">Create your first invoice to get started</div>
+        <button class="btn btn-primary" onclick="setActiveSection('invoices'); document.getElementById('invoiceForm').scrollIntoView({behavior:'smooth'})">
+          Create New Invoice
+        </button>
+      </div>
+    </td></tr>`;
     return;
   }
   state.invoices.forEach((inv) => {
@@ -3249,6 +3307,15 @@ changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault();
     });
     document.addEventListener('click', () => {
       userDropdown?.classList.remove('open');
+      notificationDropdown?.classList.remove('show');
+    });
+    
+    const notificationBtn = document.getElementById('notificationBtn');
+    const notificationDropdown = document.getElementById('notificationDropdown');
+    notificationBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      notificationDropdown?.classList.toggle('show');
+      userDropdown?.classList.remove('open');
     });
     
     const globalSearch = document.getElementById('globalSearch');
@@ -3258,7 +3325,31 @@ changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault();
       const products = state.products?.filter(p => p.name?.toLowerCase().includes(query)).slice(0, 5);
       const customers = state.customers?.filter(c => c.name?.toLowerCase().includes(query)).slice(0, 5);
       const invoices = state.invoices?.filter(i => i.invoiceNumber?.toLowerCase().includes(query)).slice(0, 5);
-      console.log('Search results:', { products, customers, invoices });
+      showStatus(`Found: ${products?.length || 0} products, ${customers?.length || 0} customers, ${invoices?.length || 0} invoices`);
+    });
+    
+    document.querySelectorAll('.dropdown-item[data-action]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const action = item.dataset.action;
+        if (action === 'new-invoice') setActiveSection('invoices');
+        else if (action === 'new-product') setActiveSection('products');
+        else if (action === 'new-customer') setActiveSection('customers');
+        else if (action === 'record-sale') setActiveSection('products');
+        else if (action === 'profile') showStatus('Profile settings coming soon');
+        else if (action === 'settings') setActiveSection('settings');
+        else if (action === 'logout') logoutBtn?.click();
+      });
+    });
+    
+    document.querySelectorAll('.user-dropdown-menu .dropdown-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const action = item.dataset.action;
+        if (action === 'settings') setActiveSection('settings');
+        else if (action === 'logout') logoutBtn?.click();
+        userDropdown?.classList.remove('open');
+      });
     });
     
     document.addEventListener('keydown', (e) => {
