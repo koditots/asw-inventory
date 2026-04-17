@@ -1421,136 +1421,284 @@
       </section>
 
       <section id="section-settings" class="app-section">
-        <div class="row g-3">
-          <div class="col-lg-6">
-            <article class="panel-card mb-3">
-              <div class="panel-title">Invoice Settings (Admin)</div>
-              <form id="invoiceSettingsForm" class="row g-2" novalidate>
-                <div class="col-md-4">
-                  <label class="form-label" for="settingsDefaultTaxRate">Default Tax %</label>
-                  <input id="settingsDefaultTaxRate" type="number" min="0" max="100" step="0.01" class="form-control" />
+        <div class="settings-header">
+          <h2 class="settings-title">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Settings
+          </h2>
+        </div>
+
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-tab="invoice">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            Invoice
+          </button>
+          <button class="settings-tab" data-tab="email">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Email
+          </button>
+          <button class="settings-tab" data-tab="security">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Security
+          </button>
+          <button class="settings-tab" data-tab="database">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            Database
+          </button>
+          <button class="settings-tab" data-tab="system">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            System
+          </button>
+        </div>
+
+        <div class="settings-content">
+          <div class="settings-panel active" id="tab-invoice">
+            <article class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon invoice-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 </div>
-                <div class="col-12">
-                  <label class="form-label" for="settingsTermsConditions">Terms & Conditions</label>
-                  <textarea id="settingsTermsConditions" class="form-control" rows="6" placeholder="Enter terms & conditions applied to invoices, performa invoices, and quotes."></textarea>
+                <div>
+                  <h3 class="settings-card-title">Invoice Settings</h3>
+                  <p class="settings-card-desc">Configure default values for invoices and quotes</p>
                 </div>
-                <div class="col-12">
-                  <div class="form-check">
-                    <input id="settingsIncludeRevenueBalanceView" class="form-check-input" type="checkbox" />
-                    <label class="form-check-label" for="settingsIncludeRevenueBalanceView">Include outstanding revenue in projected balance view</label>
-                  </div>
-                </div>
-                <div class="col-12 mt-2">
-                  <button type="submit" class="btn btn-dark">Save Invoice Settings</button>
-                </div>
-              </form>
-            </article>
-            <article class="panel-card">
-              <div class="panel-title">Company Email Setup (Admin)</div>
-              <form id="emailSettingsForm" class="row g-2" novalidate>
-                <div class="col-md-7">
-                  <label class="form-label" for="emailSmtpHost">SMTP Host</label>
-                  <input id="emailSmtpHost" class="form-control" type="text" placeholder="smtp.example.com" />
-                </div>
-                <div class="col-md-5">
-                  <label class="form-label" for="emailSmtpPort">SMTP Port</label>
-                  <input id="emailSmtpPort" class="form-control" type="number" min="1" max="65535" step="1" value="587" />
-                </div>
-                <div class="col-md-7">
-                  <label class="form-label" for="emailSmtpUser">Email Address</label>
-                  <input id="emailSmtpUser" class="form-control" type="email" placeholder="company@example.com" />
-                </div>
-                <div class="col-md-5">
-                  <label class="form-label" for="emailSmtpPass">Password</label>
-                  <input id="emailSmtpPass" class="form-control" type="password" placeholder="SMTP password" />
-                </div>
-                <div class="col-12">
-                  <div class="form-check">
-                    <input id="emailSmtpSecure" class="form-check-input" type="checkbox" />
-                    <label class="form-check-label" for="emailSmtpSecure">Use SSL/TLS</label>
-                  </div>
-                </div>
-                <div class="col-12 mt-2 d-flex gap-2">
-                  <button type="button" id="testEmailConnectionBtn" class="btn btn-outline-primary">Test Connection</button>
-                  <button type="button" id="sendTestEmailBtn" class="btn btn-outline-secondary">Send Test Email</button>
-                  <button type="submit" class="btn btn-dark">Save Email Setup</button>
-                </div>
-              </form>
-            </article>
-            <article class="panel-card mt-3">
-              <div class="panel-title">Database Maintenance</div>
-              <p class="text-muted mb-3">Backup and restore your local SQLite database.</p>
-              <div class="d-flex gap-2">
-                <button id="backupBtn" class="btn btn-outline-primary">Backup Database</button>
-                <button id="restoreBtn" class="btn btn-outline-warning">Restore Database</button>
-                <button id="autoBackupNowBtn" class="btn btn-outline-dark">Run Auto Backup</button>
               </div>
-            </article>
-            <article class="panel-card mt-3">
-              <div class="panel-title">System Configuration (Admin)</div>
-              <form id="systemConfigForm" class="row g-2" novalidate>
-                <div class="col-md-6">
-                  <label class="form-label" for="systemIndustryType">Industry Type</label>
-                  <select id="systemIndustryType" class="form-select" disabled>
-                    <option value="general">General</option>
-                    <option value="retail">Retail</option>
-                    <option value="hospitality">Hospitality</option>
-                    <option value="medical">Medical</option>
-                  </select>
-                  <small class="text-muted">Industry cannot be changed after setup.</small>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label" for="systemEnabledModules">Enabled Modules (comma-separated)</label>
-                  <input id="systemEnabledModules" class="form-control" type="text" placeholder="core,retail" />
-                </div>
-                <div class="col-12">
-                  <div class="form-check">
-                    <input id="systemSyncEnabled" class="form-check-input" type="checkbox" />
-                    <label class="form-check-label" for="systemSyncEnabled">Enable Sync Foundation Flag</label>
+              <form id="invoiceSettingsForm" novalidate>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label" for="settingsDefaultTaxRate">Default Tax Rate (%)</label>
+                    <input id="settingsDefaultTaxRate" type="number" min="0" max="100" step="0.01" class="form-control" placeholder="0.00" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="settingsIncludeRevenueBalanceView">Balance Projection</label>
+                    <label class="toggle-switch">
+                      <input id="settingsIncludeRevenueBalanceView" type="checkbox" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label">Include outstanding revenue</span>
                   </div>
                 </div>
-                <div class="col-12 mt-2">
-                  <button type="submit" class="btn btn-dark">Save System Configuration</button>
+                <div class="form-group">
+                  <label class="form-label" for="settingsTermsConditions">Terms & Conditions</label>
+                  <textarea id="settingsTermsConditions" class="form-control" rows="5" placeholder="Enter terms and conditions for invoices, performa invoices, and quotes..."></textarea>
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    Save Invoice Settings
+                  </button>
                 </div>
               </form>
             </article>
           </div>
 
-          <div class="col-lg-6">
-            <article class="panel-card">
-              <div class="panel-title">Create User</div>
-              <form id="createUserForm" class="row g-2" novalidate>
-                <div class="col-md-6">
-                  <label class="form-label" for="newUsername">Username</label>
-                  <input id="newUsername" class="form-control" type="text" required maxlength="60" />
+          <div class="settings-panel" id="tab-email">
+            <article class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon email-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                 </div>
-                <div class="col-md-6">
-                  <label class="form-label" for="newPassword">Password</label>
-                  <input id="newPassword" class="form-control" type="password" required minlength="6" />
+                <div>
+                  <h3 class="settings-card-title">Email Configuration</h3>
+                  <p class="settings-card-desc">Set up SMTP server for sending emails</p>
                 </div>
-                <div class="col-12 mt-2">
-                  <button type="submit" class="btn btn-dark">Create User</button>
+              </div>
+              <form id="emailSettingsForm" novalidate>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label" for="emailSmtpHost">SMTP Host</label>
+                    <input id="emailSmtpHost" class="form-control" type="text" placeholder="smtp.example.com" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="emailSmtpPort">SMTP Port</label>
+                    <input id="emailSmtpPort" class="form-control" type="number" min="1" max="65535" step="1" value="587" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="emailSmtpUser">Email Address</label>
+                    <input id="emailSmtpUser" class="form-control" type="email" placeholder="company@example.com" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="emailSmtpPass">Password</label>
+                    <input id="emailSmtpPass" class="form-control" type="password" placeholder="SMTP password" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="checkbox-container">
+                    <input id="emailSmtpSecure" type="checkbox" />
+                    <span class="checkmark"></span>
+                    <span class="checkbox-label">Use SSL/TLS encryption</span>
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button type="button" id="testEmailConnectionBtn" class="btn btn-outline">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Test Connection
+                  </button>
+                  <button type="button" id="sendTestEmailBtn" class="btn btn-outline">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    Send Test Email
+                  </button>
+                  <button type="submit" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    Save Email Setup
+                  </button>
                 </div>
               </form>
             </article>
-            <article class="panel-card mt-3">
-              <div class="panel-title">Change Password</div>
-              <form id="changePasswordForm" class="row g-2" novalidate>
-                <div class="col-12">
-                  <label class="form-label" for="currentPassword">Current Password</label>
-                  <input id="currentPassword" class="form-control" type="password" required />
+          </div>
+
+          <div class="settings-panel" id="tab-security">
+            <article class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon security-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                 </div>
-                <div class="col-12">
+                <div>
+                  <h3 class="settings-card-title">Change Password</h3>
+                  <p class="settings-card-desc">Update your account password</p>
+                </div>
+              </div>
+              <form id="changePasswordForm" novalidate>
+                <div class="form-group">
+                  <label class="form-label" for="currentPassword">Current Password</label>
+                  <input id="currentPassword" class="form-control" type="password" required placeholder="Enter current password" />
+                </div>
+                <div class="form-group">
                   <label class="form-label" for="changeNewPassword">New Password</label>
-                  <input id="changeNewPassword" class="form-control" type="password" required minlength="8" />
+                  <input id="changeNewPassword" class="form-control" type="password" required minlength="8" placeholder="Enter new password" />
                   <small id="passwordStrength" class="password-strength">Strength: enter password</small>
                 </div>
-                <div class="col-12">
+                <div class="form-group">
                   <label class="form-label" for="confirmNewPassword">Confirm New Password</label>
-                  <input id="confirmNewPassword" class="form-control" type="password" required />
+                  <input id="confirmNewPassword" class="form-control" type="password" required placeholder="Confirm new password" />
                 </div>
-                <div class="col-12 mt-2">
-                  <button type="submit" class="btn btn-outline-dark">Update Password</button>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Update Password
+                  </button>
+                </div>
+              </form>
+            </article>
+
+            <article class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon user-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div>
+                  <h3 class="settings-card-title">Create User</h3>
+                  <p class="settings-card-desc">Add a new user to the system</p>
+                </div>
+              </div>
+              <form id="createUserForm" novalidate>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label" for="newUsername">Username</label>
+                    <input id="newUsername" class="form-control" type="text" required maxlength="60" placeholder="Enter username" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="newPassword">Password</label>
+                    <input id="newPassword" class="form-control" type="password" required minlength="6" placeholder="Enter password" />
+                  </div>
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                    Create User
+                  </button>
+                </div>
+              </form>
+            </article>
+          </div>
+
+          <div class="settings-panel" id="tab-database">
+            <article class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon database-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                </div>
+                <div>
+                  <h3 class="settings-card-title">Database Maintenance</h3>
+                  <p class="settings-card-desc">Backup and restore your local SQLite database</p>
+                </div>
+              </div>
+              <div class="db-actions">
+                <div class="db-action-item">
+                  <div class="db-action-info">
+                    <h4>Backup Database</h4>
+                    <p>Create a backup copy of your database</p>
+                  </div>
+                  <button id="backupBtn" class="btn btn-outline">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Backup
+                  </button>
+                </div>
+                <div class="db-action-item">
+                  <div class="db-action-info">
+                    <h4>Restore Database</h4>
+                    <p>Restore from a previous backup (will overwrite current data)</p>
+                  </div>
+                  <button id="restoreBtn" class="btn btn-warning">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                    Restore
+                  </button>
+                </div>
+                <div class="db-action-item">
+                  <div class="db-action-info">
+                    <h4>Auto Backup</h4>
+                    <p>Run the scheduled automatic backup now</p>
+                  </div>
+                  <button id="autoBackupNowBtn" class="btn btn-outline">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    Run Now
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="settings-panel" id="tab-system">
+            <article class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-card-icon system-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </div>
+                <div>
+                  <h3 class="settings-card-title">System Configuration</h3>
+                  <p class="settings-card-desc">Application settings and module management</p>
+                </div>
+              </div>
+              <form id="systemConfigForm" novalidate>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label" for="systemIndustryType">Industry Type</label>
+                    <select id="systemIndustryType" class="form-select" disabled>
+                      <option value="general">General</option>
+                      <option value="retail">Retail</option>
+                      <option value="hospitality">Hospitality</option>
+                      <option value="medical">Medical</option>
+                    </select>
+                    <small class="form-hint">Industry cannot be changed after setup</small>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="systemEnabledModules">Enabled Modules</label>
+                    <input id="systemEnabledModules" class="form-control" type="text" placeholder="core,retail" />
+                    <small class="form-hint">Comma-separated module names</small>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="checkbox-container">
+                    <input id="systemSyncEnabled" type="checkbox" />
+                    <span class="checkmark"></span>
+                    <span class="checkbox-label">Enable sync foundation flag</span>
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    Save System Configuration
+                  </button>
                 </div>
               </form>
             </article>

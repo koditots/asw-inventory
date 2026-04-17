@@ -1937,6 +1937,8 @@ function renderRecentInvoicesDashboard() {
     </tr>`);
   });
 }
+
+function ensureDashboardMetricIcons() {
   Object.entries(dashboardMetricIcons).forEach(([statId, iconSvg]) => {
     const statEl = $(statId);
     if (!statEl) return;
@@ -3452,6 +3454,16 @@ createUserForm.addEventListener('submit', async (e) => { e.preventDefault(); try
 
 changeNewPassword.addEventListener('input', () => { const v = changeNewPassword.value; let s = 0; if (v.length >= 8) s++; if (/[A-Z]/.test(v)) s++; if (/[a-z]/.test(v)) s++; if (/\d/.test(v)) s++; if (/[^A-Za-z0-9]/.test(v)) s++; if (!v) { passwordStrength.textContent = 'Strength: enter password'; passwordStrength.classList.remove('weak', 'strong'); } else if (s >= 4) { passwordStrength.textContent = 'Strength: strong'; passwordStrength.classList.add('strong'); passwordStrength.classList.remove('weak'); } else { passwordStrength.textContent = 'Strength: weak (use upper/lower/number/symbol, 8+ chars)'; passwordStrength.classList.add('weak'); passwordStrength.classList.remove('strong'); } });
 changePasswordForm.addEventListener('submit', async (e) => { e.preventDefault(); try { if (!state.session?.user?.username) throw new Error('Login required.'); if (changeNewPassword.value !== confirmNewPassword.value) throw new Error('New password and confirmation do not match.'); await api.changePassword({ username: state.session.user.username, currentPassword: currentPassword.value, newPassword: changeNewPassword.value }); changePasswordForm.reset(); passwordStrength.textContent = 'Strength: enter password'; passwordStrength.classList.remove('weak', 'strong'); showStatus('Password changed successfully.'); } catch (err) { showStatus(err.message || 'Password change failed.', 'error'); } });
+
+document.querySelectorAll('.settings-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const tabName = tab.dataset.tab;
+    document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tabName)?.classList.add('active');
+  });
+});
 
 (async function init() {
   try {
